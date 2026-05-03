@@ -1,4 +1,29 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>MY FIT LOG</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; }
+    body { overscroll-behavior-y: none; background: #c0ecd8; }
+    ::-webkit-scrollbar { width: 0px; }
+    input, textarea, select { font-size: 16px !important; }
+    @keyframes floatS { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-14px) scale(1.03)} }
+    @keyframes popIn { 0%{transform:scale(0.75);opacity:0} 70%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
+    @keyframes shakePop { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
+    @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet"/>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
 
 // ─── Notion設定 ───────────────────────────────────────────
 const WORKER_URL = "https://myfitlog-notion-proxy.morinki220.workers.dev";
@@ -9,94 +34,72 @@ const DB = {
   message:  "3470bbb3ed7681ce9d94eab4e5430bcb",
 };
 
-// ─── Notion API ヘルパー ──────────────────────────────────
-async function notionQuery(dbId, sorts = []) {
+// ─── Notion API ───────────────────────────────────────────
+async function notionQuery(dbId, sorts=[]) {
   const res = await fetch(`${WORKER_URL}/notion/databases/${dbId}/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sorts }),
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({sorts}),
   });
   const data = await res.json();
   return data.results || [];
 }
-
 async function notionCreate(dbId, properties) {
   const res = await fetch(`${WORKER_URL}/notion/pages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent: { database_id: dbId }, properties }),
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({parent:{database_id:dbId}, properties}),
   });
   return await res.json();
 }
 
-async function notionUpdate(pageId, properties) {
-  const res = await fetch(`${WORKER_URL}/notion/pages/${pageId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ properties }),
-  });
-  return await res.json();
-}
+// ─── データ変換 ───────────────────────────────────────────
+const BP_ICONS = {すべて:"🏅",胸:"🤜",背中:"🔄",脚:"🦵",肩:"🤸",腕:"💪",体幹:"⚡",臀部:"🍃"};
 
-// ─── Notionデータ変換 ─────────────────────────────────────
 function parseTraining(page) {
   const p = page.properties;
-  const setsRaw = p["セット数"]?.number || 1;
+  const sets = p["セット数"]?.number || 1;
   return {
     id: page.id,
-    notionId: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0, 10),
+    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
     exercise: p["種目名"]?.title?.[0]?.plain_text || "",
     bodyPart: p["部位"]?.select?.name || "胸",
     type: p["タイプ"]?.select?.name || "マシーン",
-    sets: Array.from({ length: setsRaw }, () => ({ reps: 10 })),
+    sets: Array.from({length:sets}, ()=>({reps:10})),
     notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
     emoji: BP_ICONS[p["部位"]?.select?.name] || "💪",
     addedBy: p["追加者"]?.select?.name || "Ayumi",
-    done: p["完了"]?.checkbox || false,
   };
 }
-
 function parseHealth(page) {
   const p = page.properties;
   return {
     id: page.id,
-    notionId: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0, 10),
-    category: p["タイミング"]?.select?.name || "栄養",
+    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
+    category: p["タイミング"]?.select?.name || "朝食",
     title: p["食事内容"]?.title?.[0]?.plain_text || "",
     content: p["メモ"]?.rich_text?.[0]?.plain_text || "",
     kcal: p["カロリー(kcal)"]?.number || 0,
     protein: p["タンパク質(g)"]?.number || 0,
     carb: p["炭水化物(g)"]?.number || 0,
     fat: p["脂質(g)"]?.number || 0,
-    icon: "🥗",
-    addedBy: "Ayumi",
   };
 }
-
 function parseBody(page) {
   const p = page.properties;
   return {
     id: page.id,
-    notionId: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0, 10),
+    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
     weight: p["体重(kg)"]?.number || 0,
     fat: p["体脂肪率(%)"]?.number || 0,
     muscle: p["筋肉量(kg)"]?.number || 0,
     bmi: p["BMI"]?.number || 0,
-    condition: p["体調"]?.select?.name || "",
     notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
-    recordLabel: p["記録日"]?.title?.[0]?.plain_text || "",
   };
 }
-
 function parseMessage(page) {
   const p = page.properties;
   return {
     id: page.id,
-    notionId: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0, 10),
+    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
     title: p["タイトル"]?.title?.[0]?.plain_text || "",
     content: p["内容"]?.rich_text?.[0]?.plain_text || "",
     sender: p["送信者"]?.select?.name || "",
@@ -107,17 +110,16 @@ function parseMessage(page) {
 
 // ─── 認証 ─────────────────────────────────────────────────
 const USERS = {
-  Ayumi:   { password:"ayumi2021",  role:"member",  name:"Ayumi",  icon:"🌿" },
-  Trainer: { password:"taturo2021", role:"trainer", name:"Taturo", icon:"🏋️" },
+  Ayumi:   {password:"ayumi2021",  role:"member",  name:"Ayumi",  icon:"🌿"},
+  Trainer: {password:"taturo2021", role:"trainer", name:"Taturo", icon:"🏋️"},
 };
 
 // ─── 定数 ─────────────────────────────────────────────────
-const TABS       = ["トレーニング","健康・栄養","データ","メッセージ"];
-const TAB_ICONS  = ["💪","🌱","📊","💬"];
-const BODY_PARTS = ["すべて","胸","背中","脚","肩","腕","体幹","臀部"];
-const TYPES      = ["すべて","自重","マシーン","フリーウェイト"];
-const BP_ICONS   = {すべて:"🏅",胸:"🤜",背中:"🔄",脚:"🦵",肩:"🤸",腕:"💪",体幹:"⚡",臀部:"🍃"};
-const TYPE_COL   = {
+const TABS      = ["トレーニング","食事・栄養","データ","メッセージ"];
+const TAB_ICONS = ["💪","🌱","📊","💬"];
+const BODY_PARTS= ["すべて","胸","背中","脚","肩","腕","体幹","臀部"];
+const TYPES     = ["すべて","自重","マシーン","フリーウェイト"];
+const TYPE_COL  = {
   自重:          {bg:"#e8f8f0",text:"#1a7a4a",border:"#7acca0"},
   マシーン:      {bg:"#e8f4f8",text:"#1a5a7a",border:"#7abccc"},
   フリーウェイト:{bg:"#f8f4e8",text:"#7a5a1a",border:"#ccb87a"},
@@ -125,7 +127,7 @@ const TYPE_COL   = {
 const HEALTH_CATS = ["すべて","朝食","昼食","夕食","間食","プロテイン"];
 const CAT_ICONS   = {すべて:"🌱",朝食:"🌅",昼食:"☀️",夕食:"🌙",間食:"🍎",プロテイン:"💪"};
 
-// ─── 背景 ─────────────────────────────────────────────────
+// ─── 共通コンポーネント ───────────────────────────────────
 function BgDeco() {
   const s=[
     {w:110,h:110,t:"2%",l:"4%",c:"#b8f0d0",r:30,op:0.45,d:0},
@@ -146,12 +148,24 @@ function BgDeco() {
   );
 }
 
-// ─── ローディング ─────────────────────────────────────────
 function LoadingSpinner({msg="読み込み中..."}) {
   return (
     <div style={{textAlign:"center",padding:"60px 20px",color:"#4aaa7a"}}>
       <div style={{fontSize:36,marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>🌿</div>
       <div style={{fontFamily:"'Noto Sans JP',sans-serif",fontSize:14}}>{msg}</div>
+    </div>
+  );
+}
+
+function Toast({msg,ok}) {
+  return (
+    <div style={{
+      position:"fixed",bottom:100,left:"50%",transform:"translateX(-50%)",
+      background:ok?"rgba(30,120,70,0.95)":"rgba(180,40,40,0.95)",
+      color:"#fff",padding:"12px 20px",borderRadius:16,zIndex:2000,
+      fontSize:13,fontFamily:"'Noto Sans JP',sans-serif",
+      boxShadow:"0 4px 20px rgba(0,0,0,0.25)",maxWidth:320,textAlign:"center"}}>
+      {msg}
     </div>
   );
 }
@@ -176,16 +190,14 @@ function LoginScreen({onLogin}) {
       position:"relative",overflow:"hidden"}}>
       <BgDeco/>
       <div style={{background:"rgba(255,255,255,0.93)",borderRadius:28,padding:"36px 24px",
-        width:"100%",maxWidth:380,
-        boxShadow:"0 10px 48px rgba(30,150,90,0.20)",
+        width:"100%",maxWidth:380,boxShadow:"0 10px 48px rgba(30,150,90,0.20)",
         backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",
-        border:"2px solid rgba(140,220,180,0.6)",
-        position:"relative",zIndex:10,
+        border:"2px solid rgba(140,220,180,0.6)",position:"relative",zIndex:10,
         animation:shk?"shakePop 0.4s ease":"popIn 0.5s cubic-bezier(0.34,1.56,0.64,1)"}}>
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{fontSize:56,marginBottom:8}}>🏋️</div>
-          <div style={{fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:26,color:"#1a7a4a",letterSpacing:"-0.5px"}}>MY FIT LOG</div>
-          <div style={{fontFamily:"'Noto Sans JP',sans-serif",fontSize:14,color:"#5a9a7a",marginTop:4}}>Notion連携版 🌿</div>
+          <div style={{fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:26,color:"#1a7a4a"}}>MY FIT LOG</div>
+          <div style={{fontFamily:"'Noto Sans JP',sans-serif",fontSize:13,color:"#5a9a7a",marginTop:4}}>Notion連携版 🌿</div>
         </div>
         <div style={{marginBottom:20}}>
           <div style={{fontSize:13,fontWeight:800,color:"#1a7a4a",fontFamily:"'Nunito',sans-serif",marginBottom:12,textAlign:"center"}}>アカウントを選択</div>
@@ -196,9 +208,7 @@ function LoginScreen({onLogin}) {
                 background:sel===id?"linear-gradient(135deg,#4ac890,#1a7a4a)":"rgba(210,245,228,0.7)",
                 border:sel===id?"2px solid #1a7a4a":"2px solid rgba(120,200,160,0.5)",
                 color:sel===id?"#fff":"#1a7a4a",fontFamily:"'Nunito',sans-serif",fontWeight:900,
-                boxShadow:sel===id?"0 4px 20px rgba(30,140,80,0.38)":"none",
-                transition:"all 0.2s",transform:sel===id?"scale(1.04)":"scale(1)",
-                WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
+                transition:"all 0.2s",WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
                 <div style={{fontSize:36,marginBottom:6}}>{u.icon}</div>
                 <div style={{fontSize:17}}>{u.name}</div>
                 <div style={{fontSize:11,opacity:0.8,marginTop:3}}>{u.role==="trainer"?"トレーナー":"メンバー"}</div>
@@ -212,7 +222,7 @@ function LoginScreen({onLogin}) {
               onChange={e=>{setPw(e.target.value);setErr("");}}
               onKeyDown={e=>e.key==="Enter"&&tryLogin()}
               style={{width:"100%",padding:"15px 16px",borderRadius:14,border:"2px solid #a0d8b8",
-                fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",background:"#f0faf5",color:"#1a4a3a",outline:"none",WebkitAppearance:"none"}}
+                fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",background:"#f0faf5",color:"#1a4a3a",outline:"none"}}
               autoFocus/>
           </div>
         )}
@@ -222,8 +232,6 @@ function LoginScreen({onLogin}) {
           background:sel&&pw?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#c0e0d0",
           color:sel&&pw?"#fff":"#7ab89a",fontSize:17,fontWeight:900,
           fontFamily:"'Nunito',sans-serif",cursor:sel&&pw?"pointer":"default",
-          boxShadow:sel&&pw?"0 4px 20px rgba(30,150,80,0.40)":"none",
-          letterSpacing:"0.5px",transition:"all 0.2s",
           WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
           ログイン 💪
         </button>
@@ -232,116 +240,61 @@ function LoginScreen({onLogin}) {
   );
 }
 
-// ─── トレーニングカード ────────────────────────────────────
-function TrainingCard({rec}) {
-  const [open,setOpen]=useState(false);
-  const tc=TYPE_COL[rec.type]||{};
-  return (
-    <div onClick={()=>setOpen(o=>!o)} style={{
-      background:"rgba(255,255,255,0.88)",borderRadius:20,
-      border:`2px solid ${open?"#4ac890":"rgba(150,215,185,0.7)"}`,
-      padding:"16px",cursor:"pointer",
-      boxShadow:"0 3px 18px rgba(30,150,80,0.10)",backdropFilter:"blur(8px)",
-      WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-        <div style={{width:48,height:48,borderRadius:14,flexShrink:0,
-          background:"linear-gradient(135deg,#c0f0d8,#a0e8c0)",
-          display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{rec.emoji}</div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:16,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",
-            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rec.exercise}</div>
-          <div style={{fontSize:12,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginTop:2}}>
-            {rec.date.replace(/-/g,"/")} · {rec.sets.length}セット
-            {rec.addedBy==="Tatsuro"&&<span style={{marginLeft:6,color:"#1a5a8a"}}>🏋️ Taturo</span>}
-          </div>
-        </div>
-        <div style={{display:"flex",gap:5,flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
-          <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
-            background:tc.bg,color:tc.text,border:`1px solid ${tc.border}`,fontFamily:"'Nunito',sans-serif"}}>{rec.type}</span>
-          <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,
-            background:"#e8f8f0",color:"#1a7a4a",border:"1px solid #a0d8b8",
-            fontFamily:"'Noto Sans JP',sans-serif"}}>{rec.bodyPart}</span>
-        </div>
-      </div>
-      <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-        {rec.sets.map((s,i)=>(
-          <div key={i} style={{padding:"5px 11px",borderRadius:9,background:"#e8f8f0",
-            border:"1px solid #a0d8b8",fontSize:12,color:"#1a7a4a",fontFamily:"'Noto Sans JP',sans-serif"}}>
-            Set{i+1} {s.weight?`${s.weight}kg×${s.reps}回`:s.reps?`${s.reps}回`:s.duration||""}
-          </div>
-        ))}
-      </div>
-      {open&&rec.notes&&(
-        <div style={{marginTop:14,borderTop:"1.5px dashed #a0d8b8",paddingTop:14}}>
-          <div style={{fontSize:13,color:"#3a7a5a",padding:"10px 14px",
-            background:"#f0faf5",borderRadius:12,borderLeft:"4px solid #4ac890",
-            fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{rec.notes}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── トレーニングタブ ──────────────────────────────────────
 function TrainingTab({currentUser}) {
-  const [training,setTraining] = useState([]);
-  const [loading,setLoading]   = useState(true);
-  const [saving,setSaving]     = useState(false);
-  const [fp,setFp]             = useState("すべて");
-  const [ft,setFt]             = useState("すべて");
-  const [showAdd,setShowAdd]   = useState(false);
-  const [addForm,setAddForm]   = useState({
-    exercise:"",bodyPart:"胸",type:"マシーン",
-    sets:[{weight:"",reps:""}],notes:"",emoji:"🤜"
-  });
+  const [training,setTraining]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [fp,setFp]=useState("すべて");
+  const [ft,setFt]=useState("すべて");
+  const [showAdd,setShowAdd]=useState(false);
+  const [addForm,setAddForm]=useState({exercise:"",bodyPart:"胸",type:"マシーン",sets:[{weight:"",reps:""}],notes:"",emoji:"🤜"});
   const emojis=["🤜","💪","🦵","🏅","🔄","⚡","🤸","🏃","🧘","🏊","🚴","🎯"];
 
-  const load = useCallback(async () => {
+  const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
+
+  const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const pages = await notionQuery(DB.training, [{ property:"日付", direction:"descending" }]);
+      const pages=await notionQuery(DB.training,[{property:"日付",direction:"descending"}]);
       setTraining(pages.map(parseTraining));
-    } catch(e) {
-      console.error(e);
-    }
+    } catch(e){console.error(e);}
     setLoading(false);
-  }, []);
+  },[]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(()=>{load();},[load]);
 
-  const handleAdd = async () => {
-    if (!addForm.exercise.trim()) return;
+  const handleAdd=async()=>{
+    if(!addForm.exercise.trim())return;
     setSaving(true);
     try {
-      const senderName = currentUser.role === "trainer" ? "Tatsuro" : "Ayumi";
-      await notionCreate(DB.training, {
-        "種目名": { title: [{ text: { content: addForm.exercise } }] },
-        "部位":   { select: { name: addForm.bodyPart } },
-        "タイプ": { select: { name: addForm.type } },
-        "セット数": { number: addForm.sets.length },
-        "メモ":   { rich_text: addForm.notes ? [{ text: { content: addForm.notes } }] : [] },
-        "日付":   { date: { start: new Date().toISOString().slice(0,10) } },
-        "追加者": { select: { name: senderName } },
-        "完了":   { checkbox: false },
+      const sender=currentUser.role==="trainer"?"Tatsuro":"Ayumi";
+      await notionCreate(DB.training,{
+        "種目名":{title:[{text:{content:addForm.exercise}}]},
+        "部位":{select:{name:addForm.bodyPart}},
+        "タイプ":{select:{name:addForm.type}},
+        "セット数":{number:addForm.sets.length},
+        "メモ":{rich_text:addForm.notes?[{text:{content:addForm.notes}}]:[]},
+        "日付":{date:{start:new Date().toISOString().slice(0,10)}},
+        "追加者":{select:{name:sender}},
+        "完了":{checkbox:false},
       });
       setAddForm({exercise:"",bodyPart:"胸",type:"マシーン",sets:[{weight:"",reps:""}],notes:"",emoji:"🤜"});
       setShowAdd(false);
+      showToast("✅ Notionに保存しました！");
       await load();
-    } catch(e) {
-      console.error(e);
-    }
+    } catch(e){showToast("⚠️ 保存に失敗しました",false);}
     setSaving(false);
   };
 
-  const filtered = training
-    .filter(r=>(fp==="すべて"||r.bodyPart===fp)&&(ft==="すべて"||r.type===ft));
-  const grouped = filtered.reduce((acc,r)=>{
-    if(!acc[r.date])acc[r.date]=[];acc[r.date].push(r);return acc;
-  },{});
+  const filtered=training.filter(r=>(fp==="すべて"||r.bodyPart===fp)&&(ft==="すべて"||r.type===ft));
+  const grouped=filtered.reduce((acc,r)=>{if(!acc[r.date])acc[r.date]=[];acc[r.date].push(r);return acc;},{});
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
-      {/* フィルター */}
+      {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
+
       <div style={{overflowX:"auto",marginBottom:10,WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",gap:8,paddingBottom:4,width:"max-content"}}>
           {BODY_PARTS.map(p=>(
@@ -357,7 +310,7 @@ function TrainingTab({currentUser}) {
           ))}
         </div>
       </div>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
         {TYPES.map(t=>(
           <button key={t} onClick={()=>setFt(t)} style={{
             flex:1,padding:"10px 4px",borderRadius:12,minHeight:44,
@@ -368,21 +321,15 @@ function TrainingTab({currentUser}) {
             fontWeight:ft===t?700:400,touchAction:"manipulation"}}>{t}</button>
         ))}
       </div>
-
-      {/* 更新ボタン */}
       <button onClick={load} style={{
-        width:"100%",padding:"12px",borderRadius:14,marginBottom:12,
+        width:"100%",padding:"11px",borderRadius:14,marginBottom:14,
         background:"rgba(255,255,255,0.8)",border:"1.5px solid #a0d8b8",
-        color:"#1a7a4a",fontSize:14,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",
-        touchAction:"manipulation"}}>
-        🔄 Notionから最新データを取得
-      </button>
+        color:"#1a7a4a",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",
+        touchAction:"manipulation"}}>🔄 最新データを取得</button>
 
-      {loading ? <LoadingSpinner msg="トレーニング記録を読み込み中..." /> : (
+      {loading?<LoadingSpinner msg="トレーニング記録を読み込み中..."/>:(
         <>
-          <div style={{fontSize:12,fontWeight:800,color:"#2a8a5a",marginBottom:14,fontFamily:"'Nunito',sans-serif"}}>
-            {filtered.length} RECORDS 💪
-          </div>
+          <div style={{fontSize:12,fontWeight:800,color:"#2a8a5a",marginBottom:14,fontFamily:"'Nunito',sans-serif"}}>{filtered.length} RECORDS 💪</div>
           {Object.entries(grouped).map(([date,recs])=>(
             <div key={date} style={{marginBottom:22}}>
               <div style={{fontSize:12,fontWeight:800,color:"#1a7a4a",marginBottom:10,
@@ -392,7 +339,39 @@ function TrainingTab({currentUser}) {
                 <span>{recs.length}種目</span>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {recs.map(r=><TrainingCard key={r.id} rec={r}/>)}
+                {recs.map(r=>{
+                  const tc=TYPE_COL[r.type]||{};
+                  return (
+                    <div key={r.id} style={{
+                      background:"rgba(255,255,255,0.88)",borderRadius:20,
+                      border:"2px solid rgba(150,215,185,0.7)",padding:"16px",
+                      boxShadow:"0 3px 18px rgba(30,150,80,0.10)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                        <div style={{width:48,height:48,borderRadius:14,flexShrink:0,
+                          background:"linear-gradient(135deg,#c0f0d8,#a0e8c0)",
+                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{r.emoji}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:16,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.exercise}</div>
+                          <div style={{fontSize:12,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginTop:2}}>
+                            {r.date.replace(/-/g,"/")} · {r.sets.length}セット
+                            {r.addedBy==="Tatsuro"&&<span style={{marginLeft:6,color:"#1a5a8a"}}>🏋️ Taturo</span>}
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:5,flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
+                          <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                            background:tc.bg,color:tc.text,border:`1px solid ${tc.border}`,fontFamily:"'Nunito',sans-serif"}}>{r.type}</span>
+                          <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,
+                            background:"#e8f8f0",color:"#1a7a4a",border:"1px solid #a0d8b8",
+                            fontFamily:"'Noto Sans JP',sans-serif"}}>{r.bodyPart}</span>
+                        </div>
+                      </div>
+                      {r.notes&&<div style={{fontSize:13,color:"#3a7a5a",padding:"10px 14px",
+                        background:"#f0faf5",borderRadius:12,borderLeft:"4px solid #4ac890",
+                        fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{r.notes}</div>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -405,7 +384,15 @@ function TrainingTab({currentUser}) {
         </>
       )}
 
-      {/* 追加モーダル */}
+      {!showAdd&&(
+        <button onClick={()=>setShowAdd(true)} style={{
+          position:"fixed",bottom:90,right:20,width:56,height:56,borderRadius:"50%",
+          background:"linear-gradient(135deg,#4ac890,#1a7a4a)",border:"none",
+          color:"#fff",fontSize:28,cursor:"pointer",zIndex:200,
+          display:"flex",alignItems:"center",justifyContent:"center",
+          boxShadow:"0 4px 20px rgba(30,140,80,0.45)",touchAction:"manipulation"}}>＋</button>
+      )}
+
       {showAdd&&(
         <div style={{position:"fixed",inset:0,background:"rgba(20,100,50,0.25)",
           display:"flex",alignItems:"flex-end",zIndex:1000,backdropFilter:"blur(6px)"}}
@@ -415,18 +402,19 @@ function TrainingTab({currentUser}) {
             borderRadius:"24px 24px 0 0",padding:"20px",
             paddingBottom:"max(40px,env(safe-area-inset-bottom))",
             border:"2px solid #a0d8b8",maxHeight:"90vh",overflowY:"auto"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div style={{fontSize:17,fontWeight:900,color:"#1a7a4a",fontFamily:"'Nunito',sans-serif"}}>💪 記録を追加</div>
-              <button onClick={()=>setShowAdd(false)} style={{background:"#c0f0d8",border:"none",borderRadius:"50%",
-                width:36,height:36,cursor:"pointer",fontSize:16,color:"#1a6a3a",touchAction:"manipulation"}}>✕</button>
+              <button onClick={()=>setShowAdd(false)} style={{background:"#c0f0d8",border:"none",
+                borderRadius:"50%",width:36,height:36,cursor:"pointer",fontSize:16,color:"#1a6a3a"}}>✕</button>
             </div>
-            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
               {emojis.map(e=>(
                 <button key={e} onClick={()=>setAddForm(f=>({...f,emoji:e}))} style={{
                   width:44,height:44,borderRadius:12,fontSize:22,cursor:"pointer",
                   background:addForm.emoji===e?"#c0f0d8":"#e8f8f0",
-                  border:addForm.emoji===e?"2px solid #1a7a4a":"1.5px solid #a0d8b8",
-                  touchAction:"manipulation"}}>{e}</button>
+                  border:addForm.emoji===e?"2px solid #1a7a4a":"1.5px solid #a0d8b8"}}>
+                  {e}
+                </button>
               ))}
             </div>
             <input placeholder="種目名" value={addForm.exercise}
@@ -436,12 +424,12 @@ function TrainingTab({currentUser}) {
                 fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",outline:"none"}}/>
             <div style={{display:"flex",gap:10,marginBottom:12}}>
               <select value={addForm.bodyPart} onChange={e=>setAddForm(f=>({...f,bodyPart:e.target.value}))}
-                style={{flex:1,padding:"13px 14px",borderRadius:14,border:"2px solid #a0d8b8",
+                style={{flex:1,padding:"13px",borderRadius:14,border:"2px solid #a0d8b8",
                   background:"#f0faf5",color:"#1a4a3a",fontSize:16,fontFamily:"'Noto Sans JP',sans-serif"}}>
                 {BODY_PARTS.filter(b=>b!=="すべて").map(o=><option key={o}>{o}</option>)}
               </select>
               <select value={addForm.type} onChange={e=>setAddForm(f=>({...f,type:e.target.value}))}
-                style={{flex:1,padding:"13px 14px",borderRadius:14,border:"2px solid #a0d8b8",
+                style={{flex:1,padding:"13px",borderRadius:14,border:"2px solid #a0d8b8",
                   background:"#f0faf5",color:"#1a4a3a",fontSize:16,fontFamily:"'Noto Sans JP',sans-serif"}}>
                 {TYPES.filter(t=>t!=="すべて").map(o=><option key={o}>{o}</option>)}
               </select>
@@ -461,84 +449,75 @@ function TrainingTab({currentUser}) {
               <button onClick={()=>setAddForm(f=>({...f,sets:[...f.sets,{weight:"",reps:""}]}))}
                 style={{width:"100%",padding:"11px",borderRadius:12,background:"#e8f8f0",
                   border:"1.5px dashed #a0d8b8",color:"#1a7a4a",cursor:"pointer",
-                  fontSize:14,fontFamily:"'Noto Sans JP',sans-serif",minHeight:44,touchAction:"manipulation"}}>
+                  fontSize:14,fontFamily:"'Noto Sans JP',sans-serif",minHeight:44}}>
                 ＋ セットを追加
               </button>
             </div>
             <textarea placeholder="メモ" value={addForm.notes}
               onChange={e=>setAddForm(f=>({...f,notes:e.target.value}))}
-              style={{width:"100%",padding:"13px 16px",borderRadius:14,marginBottom:16,
+              style={{width:"100%",padding:"13px",borderRadius:14,marginBottom:14,
                 border:"2px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
                 fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:80,resize:"vertical"}}/>
             <button onClick={handleAdd} disabled={saving} style={{width:"100%",padding:"16px",borderRadius:16,border:"none",
               background:saving?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",color:"#fff",fontSize:17,
-              fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif",minHeight:56,touchAction:"manipulation"}}>
+              fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif",minHeight:56}}>
               {saving?"保存中...":"Notionに保存 💪"}
             </button>
           </div>
         </div>
       )}
-
-      {/* 追加ボタン（フローティング） */}
-      {!showAdd&&(
-        <button onClick={()=>setShowAdd(true)} style={{
-          position:"fixed",bottom:90,right:20,width:56,height:56,borderRadius:"50%",
-          background:"linear-gradient(135deg,#4ac890,#1a7a4a)",
-          border:"none",color:"#fff",fontSize:28,cursor:"pointer",
-          display:"flex",alignItems:"center",justifyContent:"center",
-          boxShadow:"0 4px 20px rgba(30,140,80,0.45)",zIndex:200,touchAction:"manipulation"}}>＋</button>
-      )}
     </div>
   );
 }
 
-// ─── 健康タブ ─────────────────────────────────────────────
+// ─── 食事・栄養タブ ───────────────────────────────────────
 function HealthTab({currentUser}) {
-  const [health,setHealth] = useState([]);
-  const [loading,setLoading] = useState(true);
-  const [saving,setSaving] = useState(false);
-  const [cat,setCat] = useState("すべて");
-  const [showForm,setShowForm] = useState(false);
-  const [form,setForm] = useState({
-    title:"",timing:"朝食",kcal:"",protein:"",carb:"",fat:"",notes:""
-  });
+  const [health,setHealth]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [cat,setCat]=useState("すべて");
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({title:"",timing:"朝食",kcal:"",protein:"",carb:"",fat:"",notes:""});
 
-  const load = useCallback(async () => {
+  const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
+  const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const pages = await notionQuery(DB.health, [{ property:"日付", direction:"descending" }]);
+      const pages=await notionQuery(DB.health,[{property:"日付",direction:"descending"}]);
       setHealth(pages.map(parseHealth));
-    } catch(e) { console.error(e); }
+    } catch(e){console.error(e);}
     setLoading(false);
-  }, []);
+  },[]);
+  useEffect(()=>{load();},[load]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const handleSave = async () => {
-    if (!form.title.trim()) return;
+  const handleSave=async()=>{
+    if(!form.title.trim())return;
     setSaving(true);
     try {
-      await notionCreate(DB.health, {
-        "食事内容":     { title: [{ text: { content: form.title } }] },
-        "タイミング":   { select: { name: form.timing } },
-        "カロリー(kcal)":  { number: Number(form.kcal) || 0 },
-        "タンパク質(g)":   { number: Number(form.protein) || 0 },
-        "炭水化物(g)":     { number: Number(form.carb) || 0 },
-        "脂質(g)":         { number: Number(form.fat) || 0 },
-        "メモ":         { rich_text: form.notes ? [{ text: { content: form.notes } }] : [] },
-        "日付":         { date: { start: new Date().toISOString().slice(0,10) } },
+      await notionCreate(DB.health,{
+        "食事内容":{title:[{text:{content:form.title}}]},
+        "タイミング":{select:{name:form.timing}},
+        "カロリー(kcal)":{number:Number(form.kcal)||0},
+        "タンパク質(g)":{number:Number(form.protein)||0},
+        "炭水化物(g)":{number:Number(form.carb)||0},
+        "脂質(g)":{number:Number(form.fat)||0},
+        "メモ":{rich_text:form.notes?[{text:{content:form.notes}}]:[]},
+        "日付":{date:{start:new Date().toISOString().slice(0,10)}},
       });
       setForm({title:"",timing:"朝食",kcal:"",protein:"",carb:"",fat:"",notes:""});
       setShowForm(false);
+      showToast("✅ Notionに保存しました！");
       await load();
-    } catch(e) { console.error(e); }
+    } catch(e){showToast("⚠️ 保存に失敗しました",false);}
     setSaving(false);
   };
 
-  const filtered = health.filter(r=>cat==="すべて"||r.category===cat);
+  const filtered=health.filter(r=>cat==="すべて"||r.category===cat);
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
+      {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
       <div style={{overflowX:"auto",marginBottom:14,WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",gap:8,paddingBottom:4,width:"max-content"}}>
           {HEALTH_CATS.map(c=>(
@@ -554,7 +533,6 @@ function HealthTab({currentUser}) {
           ))}
         </div>
       </div>
-
       <button onClick={()=>setShowForm(s=>!s)} style={{
         width:"100%",padding:"15px",borderRadius:16,marginBottom:14,minHeight:52,
         background:showForm?"rgba(200,240,220,0.6)":"linear-gradient(135deg,#4ac890,#1a7a4a)",
@@ -563,48 +541,44 @@ function HealthTab({currentUser}) {
         cursor:"pointer",fontFamily:"'Nunito',sans-serif",touchAction:"manipulation"}}>
         {showForm?"▲ 閉じる":"＋ 食事記録を追加"}
       </button>
-
       {showForm&&(
         <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:14}}>
           <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
             {HEALTH_CATS.filter(c=>c!=="すべて").map(c=>(
               <button key={c} onClick={()=>setForm(f=>({...f,timing:c}))} style={{
-                padding:"8px 14px",borderRadius:12,cursor:"pointer",fontSize:13,minHeight:44,
+                padding:"8px 14px",borderRadius:12,cursor:"pointer",fontSize:13,minHeight:40,
                 background:form.timing===c?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#e8f8f0",
                 color:form.timing===c?"#fff":"#1a7a4a",border:"none",
-                fontFamily:"'Noto Sans JP',sans-serif",touchAction:"manipulation"}}>
+                fontFamily:"'Noto Sans JP',sans-serif"}}>
                 {CAT_ICONS[c]} {c}
               </button>
             ))}
           </div>
           <input placeholder="食事内容（例：鶏胸肉＋玄米＋サラダ）" value={form.title}
             onChange={e=>setForm(f=>({...f,title:e.target.value}))}
-            style={{width:"100%",padding:"13px 15px",borderRadius:12,marginBottom:10,
+            style={{width:"100%",padding:"13px",borderRadius:12,marginBottom:10,
               border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
               fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",outline:"none"}}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-            {[{k:"kcal",ph:"カロリー(kcal)"},{k:"protein",ph:"タンパク質(g)"},
-              {k:"carb",ph:"炭水化物(g)"},{k:"fat",ph:"脂質(g)"}].map(f=>(
+            {[{k:"kcal",ph:"カロリー(kcal)"},{k:"protein",ph:"タンパク質(g)"},{k:"carb",ph:"炭水化物(g)"},{k:"fat",ph:"脂質(g)"}].map(f=>(
               <input key={f.k} type="number" placeholder={f.ph} value={form[f.k]}
                 onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))}
                 style={{padding:"12px",borderRadius:12,border:"1.5px solid #a0d8b8",
                   background:"#f0faf5",color:"#1a4a3a",fontSize:16,outline:"none"}}/>
             ))}
           </div>
-          <textarea placeholder="メモ" value={form.notes}
-            onChange={e=>setForm(f=>({...f,notes:e.target.value}))}
-            style={{width:"100%",padding:"13px",borderRadius:12,marginBottom:10,
+          <textarea placeholder="メモ" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}
+            style={{width:"100%",padding:"12px",borderRadius:12,marginBottom:10,
               border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
               fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:70,resize:"vertical"}}/>
           <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"14px",borderRadius:14,border:"none",
             background:saving?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",color:"#fff",fontSize:16,
-            fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif",touchAction:"manipulation"}}>
+            fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif"}}>
             {saving?"保存中...":"Notionに保存 🥗"}
           </button>
         </div>
       )}
-
-      {loading ? <LoadingSpinner msg="食事記録を読み込み中..." /> : (
+      {loading?<LoadingSpinner msg="食事記録を読み込み中..."/>:(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           {filtered.map(r=>(
             <div key={r.id} style={{background:"rgba(255,255,255,0.88)",borderRadius:18,
@@ -616,12 +590,12 @@ function HealthTab({currentUser}) {
                   <div style={{fontSize:12,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif"}}>{r.date.replace(/-/g,"/")} · {r.category}</div>
                 </div>
               </div>
-              {(r.kcal||r.protein)>0&&(
-                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-                  {r.kcal>0&&<span style={{padding:"3px 10px",borderRadius:20,fontSize:11,background:"#fff3e0",color:"#e65100",border:"1px solid #ffcc80"}}>🔥 {r.kcal}kcal</span>}
-                  {r.protein>0&&<span style={{padding:"3px 10px",borderRadius:20,fontSize:11,background:"#e8f5e9",color:"#2e7d32",border:"1px solid #a5d6a7"}}>💪 P:{r.protein}g</span>}
-                  {r.carb>0&&<span style={{padding:"3px 10px",borderRadius:20,fontSize:11,background:"#e3f2fd",color:"#1565c0",border:"1px solid #90caf9"}}>🌾 C:{r.carb}g</span>}
-                  {r.fat>0&&<span style={{padding:"3px 10px",borderRadius:20,fontSize:11,background:"#fce4ec",color:"#880e4f",border:"1px solid #f48fb1"}}>🫒 F:{r.fat}g</span>}
+              {(r.kcal+r.protein+r.carb+r.fat)>0&&(
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {r.kcal>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#fff3e0",color:"#e65100",border:"1px solid #ffcc80"}}>🔥 {r.kcal}kcal</span>}
+                  {r.protein>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#e8f5e9",color:"#2e7d32",border:"1px solid #a5d6a7"}}>💪 P:{r.protein}g</span>}
+                  {r.carb>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#e3f2fd",color:"#1565c0",border:"1px solid #90caf9"}}>🌾 C:{r.carb}g</span>}
+                  {r.fat>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#fce4ec",color:"#880e4f",border:"1px solid #f48fb1"}}>🫒 F:{r.fat}g</span>}
                 </div>
               )}
               {r.content&&<div style={{fontSize:13,color:"#3a6a4a",fontFamily:"'Noto Sans JP',sans-serif",
@@ -637,53 +611,55 @@ function HealthTab({currentUser}) {
 
 // ─── データタブ ───────────────────────────────────────────
 function DataTab() {
-  const [body,setBody] = useState([]);
-  const [loading,setLoading] = useState(true);
-  const [saving,setSaving] = useState(false);
-  const [showForm,setShowForm] = useState(false);
-  const [form,setForm] = useState({weight:"",fat:"",muscle:"",bmi:"",notes:""});
+  const [body,setBody]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({weight:"",fat:"",muscle:"",bmi:"",notes:""});
 
-  const load = useCallback(async () => {
+  const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
+  const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const pages = await notionQuery(DB.body, [{ property:"日付", direction:"descending" }]);
+      const pages=await notionQuery(DB.body,[{property:"日付",direction:"descending"}]);
       setBody(pages.map(parseBody));
-    } catch(e) { console.error(e); }
+    } catch(e){console.error(e);}
     setLoading(false);
-  }, []);
+  },[]);
+  useEffect(()=>{load();},[load]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const handleSave = async () => {
-    if (!form.weight) return;
+  const handleSave=async()=>{
+    if(!form.weight)return;
     setSaving(true);
-    const today = new Date().toISOString().slice(0,10);
+    const today=new Date().toISOString().slice(0,10);
     try {
-      await notionCreate(DB.body, {
-        "記録日":      { title: [{ text: { content: today } }] },
-        "体重(kg)":    { number: Number(form.weight) },
-        "体脂肪率(%)": { number: Number(form.fat) || 0 },
-        "筋肉量(kg)":  { number: Number(form.muscle) || 0 },
-        "BMI":         { number: Number(form.bmi) || 0 },
-        "メモ":        { rich_text: form.notes ? [{ text: { content: form.notes } }] : [] },
-        "日付":        { date: { start: today } },
+      await notionCreate(DB.body,{
+        "記録日":{title:[{text:{content:today}}]},
+        "体重(kg)":{number:Number(form.weight)},
+        "体脂肪率(%)":{number:Number(form.fat)||0},
+        "筋肉量(kg)":{number:Number(form.muscle)||0},
+        "BMI":{number:Number(form.bmi)||0},
+        "メモ":{rich_text:form.notes?[{text:{content:form.notes}}]:[]},
+        "日付":{date:{start:today}},
       });
       setForm({weight:"",fat:"",muscle:"",bmi:"",notes:""});
       setShowForm(false);
+      showToast("✅ Notionに保存しました！");
       await load();
-    } catch(e) { console.error(e); }
+    } catch(e){showToast("⚠️ 保存に失敗しました",false);}
     setSaving(false);
   };
 
-  const latest = body[0];
-  const prev   = body[1];
-  const diff = k => latest&&prev ? (Number(latest[k])-Number(prev[k])).toFixed(1) : 0;
-  const arrowC = (k,inv=false) => { const d=diff(k); if(d==0)return"#888"; const up=d>0; return(up&&!inv)||(!up&&inv)?"#cc4444":"#1a8a5a"; };
-  const arrowS = (k,inv=false) => { const d=diff(k); if(d==0)return"→"; const up=d>0; return(up&&!inv)||(!up&&inv)?"▲":"▼"; };
+  const latest=body[0],prev=body[1];
+  const diff=k=>latest&&prev?(Number(latest[k])-Number(prev[k])).toFixed(1):0;
+  const arrowC=(k,inv=false)=>{const d=diff(k);if(d==0)return"#888";const up=d>0;return(up&&!inv)||(!up&&inv)?"#cc4444":"#1a8a5a";};
+  const arrowS=(k,inv=false)=>{const d=diff(k);if(d==0)return"→";const up=d>0;return(up&&!inv)||(!up&&inv)?"▲":"▼";};
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
-      {loading ? <LoadingSpinner msg="ボディデータを読み込み中..." /> : (
+      {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
+      {loading?<LoadingSpinner msg="ボディデータを読み込み中..."/>:(
         <>
           {latest&&(
             <div style={{background:"linear-gradient(135deg,rgba(195,238,215,0.97),rgba(170,225,200,0.97))",
@@ -695,13 +671,13 @@ function DataTab() {
                   <div style={{fontSize:12,color:"#3a8a5a",fontFamily:"'Noto Sans JP',sans-serif"}}>{latest.date.replace(/-/g,"/")} 測定</div>
                 </div>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                 {[{l:"体重",k:"weight",u:"kg",inv:true},{l:"体脂肪率",k:"fat",u:"%",inv:true},
                   {l:"筋肉量",k:"muscle",u:"kg",inv:false},{l:"BMI",k:"bmi",u:"",inv:true}].map(m=>(
-                  <div key={m.k} style={{background:"rgba(255,255,255,0.86)",borderRadius:14,padding:"12px 8px",textAlign:"center"}}>
-                    <div style={{fontSize:10,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginBottom:3}}>{m.l}</div>
-                    <div style={{fontSize:20,fontWeight:900,color:"#1a5a3a",fontFamily:"'Nunito',sans-serif"}}>{latest[m.k]}{m.u}</div>
-                    <div style={{fontSize:11,color:arrowC(m.k,m.inv),fontFamily:"'Nunito',sans-serif",fontWeight:700,marginTop:2}}>
+                  <div key={m.k} style={{background:"rgba(255,255,255,0.86)",borderRadius:14,padding:"14px 10px",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginBottom:4}}>{m.l}</div>
+                    <div style={{fontSize:22,fontWeight:900,color:"#1a5a3a",fontFamily:"'Nunito',sans-serif"}}>{latest[m.k]}{m.u}</div>
+                    <div style={{fontSize:11,color:arrowC(m.k,m.inv),fontFamily:"'Nunito',sans-serif",fontWeight:700,marginTop:3}}>
                       {arrowS(m.k,m.inv)} {Math.abs(diff(m.k))}{m.u}
                     </div>
                   </div>
@@ -709,7 +685,6 @@ function DataTab() {
               </div>
             </div>
           )}
-
           <div style={{fontWeight:900,fontSize:13,color:"#1a7a4a",marginBottom:10,fontFamily:"'Nunito',sans-serif"}}>📈 測定履歴</div>
           <div style={{background:"rgba(255,255,255,0.88)",borderRadius:16,border:"2px solid rgba(150,215,185,0.7)",overflow:"hidden",marginBottom:16}}>
             <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr",
@@ -728,10 +703,10 @@ function DataTab() {
                 <div style={{textAlign:"center"}}>{r.muscle}</div>
               </div>
             ))}
+            {body.length===0&&<div style={{textAlign:"center",padding:"30px",color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>データがありません</div>}
           </div>
         </>
       )}
-
       <button onClick={()=>setShowForm(s=>!s)} style={{
         width:"100%",padding:"14px",borderRadius:16,marginBottom:showForm?16:0,minHeight:52,
         background:showForm?"rgba(200,240,220,0.6)":"linear-gradient(135deg,#4ac890,#1a7a4a)",
@@ -746,18 +721,17 @@ function DataTab() {
             {[{k:"weight",ph:"体重 (kg)"},{k:"fat",ph:"体脂肪率 (%)"},{k:"muscle",ph:"筋肉量 (kg)"},{k:"bmi",ph:"BMI"}].map(f=>(
               <input key={f.k} type="number" placeholder={f.ph} value={form[f.k]}
                 onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))}
-                style={{padding:"13px 14px",borderRadius:12,border:"1.5px solid #a0d8b8",
+                style={{padding:"13px",borderRadius:12,border:"1.5px solid #a0d8b8",
                   background:"#f0faf5",color:"#1a4a3a",fontSize:16,outline:"none"}}/>
             ))}
           </div>
-          <textarea placeholder="メモ" value={form.notes}
-            onChange={e=>setForm(f=>({...f,notes:e.target.value}))}
+          <textarea placeholder="メモ（体調など）" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}
             style={{width:"100%",padding:"12px",borderRadius:12,marginBottom:12,
               border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
               fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:60,resize:"vertical"}}/>
           <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"14px",borderRadius:14,border:"none",
             background:saving?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",color:"#fff",fontSize:16,
-            fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif",touchAction:"manipulation"}}>
+            fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif"}}>
             {saving?"保存中...":"Notionに保存 📊"}
           </button>
         </div>
@@ -768,51 +742,53 @@ function DataTab() {
 
 // ─── メッセージタブ ───────────────────────────────────────
 function MessageTab({currentUser}) {
-  const [msgs,setMsgs] = useState([]);
-  const [loading,setLoading] = useState(true);
-  const [saving,setSaving] = useState(false);
-  const [form,setForm] = useState({title:"",content:"",category:"アドバイス"});
-  const CATS = ["アドバイス","メニュー提案","励まし","雑談","報告"];
+  const [msgs,setMsgs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [toast,setToast]=useState(null);
+  const [form,setForm]=useState({title:"",content:"",category:"アドバイス"});
+  const CATS=["アドバイス","メニュー提案","励まし","雑談","報告"];
 
-  const load = useCallback(async () => {
+  const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
+  const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const pages = await notionQuery(DB.message, [{ property:"日付", direction:"descending" }]);
+      const pages=await notionQuery(DB.message,[{property:"日付",direction:"descending"}]);
       setMsgs(pages.map(parseMessage));
-    } catch(e) { console.error(e); }
+    } catch(e){console.error(e);}
     setLoading(false);
-  }, []);
+  },[]);
+  useEffect(()=>{load();},[load]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const handleSend = async () => {
-    if (!form.content.trim()) return;
+  const handleSend=async()=>{
+    if(!form.content.trim())return;
     setSaving(true);
-    const isTrainer = currentUser.role === "trainer";
-    const sender = isTrainer ? "Tatsuro → Ayumi" : "Ayumi → Tatsuro";
+    const isTrainer=currentUser.role==="trainer";
+    const sender=isTrainer?"Tatsuro → Ayumi":"Ayumi → Tatsuro";
     try {
-      await notionCreate(DB.message, {
-        "タイトル": { title: [{ text: { content: form.title || form.content.slice(0,20) } }] },
-        "内容":     { rich_text: [{ text: { content: form.content } }] },
-        "送信者":   { select: { name: sender } },
-        "カテゴリ": { select: { name: form.category } },
-        "返信済み": { checkbox: false },
-        "日付":     { date: { start: new Date().toISOString().slice(0,10) } },
+      await notionCreate(DB.message,{
+        "タイトル":{title:[{text:{content:form.title||form.content.slice(0,20)}}]},
+        "内容":{rich_text:[{text:{content:form.content}}]},
+        "送信者":{select:{name:sender}},
+        "カテゴリ":{select:{name:form.category}},
+        "返信済み":{checkbox:false},
+        "日付":{date:{start:new Date().toISOString().slice(0,10)}},
       });
       setForm({title:"",content:"",category:"アドバイス"});
+      showToast("✅ 送信しました！");
       await load();
-    } catch(e) { console.error(e); }
+    } catch(e){showToast("⚠️ 送信に失敗しました",false);}
     setSaving(false);
   };
 
-  const isTrainer = currentUser.role === "trainer";
+  const isTrainer=currentUser.role==="trainer";
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
-      {/* 送信フォーム */}
+      {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
       <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:16}}>
-        <div style={{fontSize:15,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",marginBottom:12}}>
-          {isTrainer ? "🏋️ Ayumiへメッセージ" : "💬 Taturoへメッセージ"}
+        <div style={{fontSize:15,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",marginBottom:10}}>
+          {isTrainer?"🏋️ Ayumiへメッセージ":"💬 Taturoへメッセージ"}
         </div>
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
           {CATS.map(c=>(
@@ -820,7 +796,9 @@ function MessageTab({currentUser}) {
               padding:"6px 12px",borderRadius:20,cursor:"pointer",fontSize:12,
               background:form.category===c?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#e8f8f0",
               color:form.category===c?"#fff":"#1a7a4a",border:"none",
-              fontFamily:"'Noto Sans JP',sans-serif",touchAction:"manipulation"}}>{c}</button>
+              fontFamily:"'Noto Sans JP',sans-serif"}}>
+              {c}
+            </button>
           ))}
         </div>
         <textarea value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))}
@@ -832,31 +810,29 @@ function MessageTab({currentUser}) {
           width:"100%",padding:"14px",borderRadius:14,border:"none",
           background:saving||!form.content.trim()?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",
           color:"#fff",fontSize:15,fontWeight:900,cursor:"pointer",
-          fontFamily:"'Nunito',sans-serif",touchAction:"manipulation"}}>
+          fontFamily:"'Nunito',sans-serif"}}>
           {saving?"送信中...":"送信 ✉️"}
         </button>
       </div>
-
-      {loading ? <LoadingSpinner msg="メッセージを読み込み中..." /> : (
+      {loading?<LoadingSpinner msg="メッセージを読み込み中..."/>:(
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           {msgs.map(m=>{
-            const isFromTrainer = m.sender?.includes("Tatsuro →");
+            const fromTrainer=m.sender?.includes("Tatsuro →");
             return (
               <div key={m.id} style={{
-                background:isFromTrainer?"linear-gradient(135deg,#d8f0f8,#c8e8f4)":"rgba(210,245,228,0.95)",
-                border:`1.5px solid ${isFromTrainer?"#7abccc":"#a0d8b8"}`,
+                background:fromTrainer?"linear-gradient(135deg,#d8f0f8,#c8e8f4)":"rgba(210,245,228,0.95)",
+                border:`1.5px solid ${fromTrainer?"#7abccc":"#a0d8b8"}`,
                 borderRadius:16,padding:"14px",
-                alignSelf:isFromTrainer?"flex-start":"flex-end",
-                maxWidth:"90%"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                alignSelf:fromTrainer?"flex-start":"flex-end",maxWidth:"90%"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                   <span style={{fontSize:12,fontWeight:800,
-                    color:isFromTrainer?"#1a4a6a":"#1a6a4a",fontFamily:"'Nunito',sans-serif"}}>
-                    {isFromTrainer?"🏋️ Taturo":"🌿 Ayumi"}
+                    color:fromTrainer?"#1a4a6a":"#1a6a4a",fontFamily:"'Nunito',sans-serif"}}>
+                    {fromTrainer?"🏋️ Taturo":"🌿 Ayumi"}
                   </span>
-                  <span style={{fontSize:11,color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>{m.date.replace(/-/g,"/")}</span>
+                  <span style={{fontSize:11,color:"#8ab8a0"}}>{m.date.replace(/-/g,"/")}</span>
                   <span style={{padding:"2px 8px",borderRadius:20,fontSize:10,
-                    background:"rgba(255,255,255,0.6)",color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif"}}>{m.category}</span>
-                  {m.replied&&<span style={{fontSize:11,color:"#1a8a5a"}}>✅ 返信済み</span>}
+                    background:"rgba(255,255,255,0.6)",color:"#5a9a7a"}}>{m.category}</span>
+                  {m.replied&&<span style={{fontSize:11,color:"#1a8a5a"}}>✅</span>}
                 </div>
                 {m.title&&<div style={{fontSize:13,fontWeight:700,color:"#1a4a3a",marginBottom:4,fontFamily:"'Nunito',sans-serif"}}>{m.title}</div>}
                 <div style={{fontSize:14,color:"#2a4a3a",fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{m.content}</div>
@@ -871,33 +847,17 @@ function MessageTab({currentUser}) {
 }
 
 // ─── メインアプリ ──────────────────────────────────────────
-export default function App() {
-  const [user,setUser] = useState(null);
-  const [tab,setTab]   = useState(0);
-
-  if (!user) return <LoginScreen onLogin={setUser}/>;
-
+function App() {
+  const [user,setUser]=useState(null);
+  const [tab,setTab]=useState(0);
+  if(!user)return <LoginScreen onLogin={setUser}/>;
   return (
     <div style={{minHeight:"100vh",
       background:"linear-gradient(145deg,#d4f4e4 0%,#c0ecd8 30%,#b0e4cc 60%,#ccf0e0 100%)",
       fontFamily:"'Noto Sans JP',sans-serif",maxWidth:480,margin:"0 auto",position:"relative"}}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Noto+Sans+JP:wght@400;500;700&display=swap');
-        *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-        body{overscroll-behavior-y:none;}
-        ::-webkit-scrollbar{width:0px}
-        input,textarea,select{font-size:16px!important;}
-        @keyframes floatS{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-14px) scale(1.03)}}
-        @keyframes popIn{0%{transform:scale(0.75);opacity:0}70%{transform:scale(1.04)}100%{transform:scale(1);opacity:1}}
-        @keyframes shakePop{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
-        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-      `}</style>
       <BgDeco/>
-
-      {/* ヘッダー */}
       <div style={{
-        padding:"12px 16px 10px",
-        paddingTop:"max(12px, env(safe-area-inset-top))",
+        padding:"12px 16px 10px",paddingTop:"max(12px,env(safe-area-inset-top))",
         position:"sticky",top:0,zIndex:100,
         background:"rgba(190,236,212,0.88)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",
         borderBottom:"1.5px solid rgba(110,195,150,0.5)"}}>
@@ -905,7 +865,7 @@ export default function App() {
           <div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:22}}>🏋️</span>
-              <span style={{fontSize:20,fontWeight:900,color:"#1a6a3a",fontFamily:"'Nunito',sans-serif",letterSpacing:"-0.5px"}}>MY FIT LOG</span>
+              <span style={{fontSize:20,fontWeight:900,color:"#1a6a3a",fontFamily:"'Nunito',sans-serif"}}>MY FIT LOG</span>
               <span style={{fontSize:10,background:"#4ac890",color:"#fff",padding:"2px 8px",borderRadius:20,fontFamily:"'Nunito',sans-serif",fontWeight:800}}>Notion</span>
             </div>
             <div style={{fontSize:12,color:"#3a8a5a",fontFamily:"'Noto Sans JP',sans-serif",marginTop:2}}>
@@ -915,8 +875,9 @@ export default function App() {
           <button onClick={()=>setUser(null)} style={{
             padding:"8px 14px",borderRadius:12,minHeight:44,
             background:"rgba(255,255,255,0.75)",border:"1.5px solid #7acca0",color:"#1a6a3a",
-            fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontWeight:600,
-            touchAction:"manipulation"}}>ログアウト</button>
+            fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",fontWeight:600}}>
+            ログアウト
+          </button>
         </div>
         <div style={{display:"flex",gap:6}}>
           {TABS.map((t,i)=>(
@@ -932,7 +893,6 @@ export default function App() {
           ))}
         </div>
       </div>
-
       {tab===0&&<TrainingTab currentUser={user}/>}
       {tab===1&&<HealthTab currentUser={user}/>}
       {tab===2&&<DataTab/>}
@@ -940,3 +900,8 @@ export default function App() {
     </div>
   );
 }
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
