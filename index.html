@@ -26,7 +26,6 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-// ─── Notion設定 ───────────────────────────────────────────
 const WORKER_URL = "https://myfitlog-notion-proxy.morinki220.workers.dev";
 const DB = {
   training: "3470bbb3ed76818e969cc5a61f3dc492",
@@ -35,7 +34,6 @@ const DB = {
   message:  "3470bbb3ed7681ce9d94eab4e5430bcb",
 };
 
-// ─── Notion API ───────────────────────────────────────────
 async function notionQuery(dbId, sorts=[]) {
   const res = await fetch(`${WORKER_URL}/notion/databases/${dbId}/query`, {
     method:"POST", headers:{"Content-Type":"application/json"},
@@ -51,8 +49,22 @@ async function notionCreate(dbId, properties) {
   });
   return await res.json();
 }
+async function notionUpdate(pageId, properties) {
+  const res = await fetch(`${WORKER_URL}/notion/pages/${pageId}`, {
+    method:"PATCH", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({properties}),
+  });
+  return await res.json();
+}
+async function uploadToR2(file, key) {
+  const res = await fetch(`${WORKER_URL}/r2/${key}`, {
+    method:"PUT",
+    headers:{"Content-Type": file.type},
+    body: file,
+  });
+  return await res.json();
+}
 
-// ─── データ変換 ───────────────────────────────────────────
 const BP_ICONS = {すべて:"🏅",胸:"🤜",背中:"🔄",脚:"🦵",肩:"🤸",腕:"💪",体幹:"⚡",臀部:"🍃"};
 
 function parseTraining(page) {
@@ -68,6 +80,8 @@ function parseTraining(page) {
     notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
     emoji: BP_ICONS[p["部位"]?.select?.name] || "💪",
     addedBy: p["追加者"]?.select?.name || "Ayumi",
+    mediaKey: p["メディアキー"]?.rich_text?.[0]?.plain_text || "",
+    mediaType: p["メディアタイプ"]?.select?.name || "",
   };
 }
 function parseHealth(page) {
@@ -109,12 +123,10 @@ function parseMessage(page) {
   };
 }
 
-// ─── 認証 ─────────────────────────────────────────────────
 const USERS = {
-  Ayumi:   {password:"ayumi2021",  role:"member",  name:"Ayumi",  icon:"🌿"},
+  Ayumi: {password:"ayumi2021", role:"member", name:"Ayumi", icon:"🌿"},
 };
 
-// ─── 定数 ─────────────────────────────────────────────────
 const TABS      = ["トレーニング","食事・栄養","データ","メッセージ"];
 const TAB_ICONS = ["💪","🌱","📊","💬"];
 const BODY_PARTS= ["すべて","胸","背中","脚","肩","腕","体幹","臀部"];
@@ -127,7 +139,6 @@ const TYPE_COL  = {
 const HEALTH_CATS = ["すべて","朝食","昼食","夕食","間食","プロテイン"];
 const CAT_ICONS   = {すべて:"🌱",朝食:"🌅",昼食:"☀️",夕食:"🌙",間食:"🍎",プロテイン:"💪"};
 
-// ─── 共通コンポーネント ───────────────────────────────────
 function BgDeco() {
   const s=[
     {w:110,h:110,t:"2%",l:"4%",c:"#b8f0d0",r:30,op:0.45,d:0},
@@ -170,7 +181,6 @@ function Toast({msg,ok}) {
   );
 }
 
-// ─── ログイン ─────────────────────────────────────────────
 function LoginScreen({onLogin}) {
   const [sel,setSel]=useState(null);
   const [pw,setPw]=useState("");
@@ -240,7 +250,104 @@ function LoginScreen({onLogin}) {
   );
 }
 
-// ─── トレーニングタブ ──────────────────────────────────────
+function MediaViewer({mediaKey, mediaType}) {
+  const url = `${WORKER_URL}/r2/${mediaKey}`;
+  if (!mediaKey) return null;
+  const isVideo = mediaType === "video" || mediaKey.match(/\.(mp4|mov|avi|webm)$/i);
+  return (
+    <div style={{marginTop:12,borderRadius:14,overflow:"hidden",background:"#000"}}>
+      {isVideo ? (
+        <video controls style={{width:"100%",maxHeight:300,display:"block"}} src={url}/>
+      ) : (
+        <img src={url} alt="トレーニング写真" style={{width:"100%",maxHeight:300,objectFit:"cover",display:"block"}}/>
+      )}
+    </div>
+  );
+}
+
+function TrainingCard({rec, onMediaUpload}) {
+  const [open,setOpen]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const fileRef=useRef(null);
+  const tc=TYPE_COL[rec.type]||{};
+
+  const handleFileChange=async(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    setUploading(true);
+    try {
+      const ext=file.name.split(".").pop();
+      const key=`training/${rec.id}_${Date.now()}.${ext}`;
+      const mediaType=file.type.startsWith("video")?"video":"image";
+      await uploadToR2(file,key);
+      await onMediaUpload(rec.id, key, mediaType);
+    } catch(err){console.error(err);}
+    setUploading(false);
+    e.target.value="";
+  };
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.88)",borderRadius:20,
+      border:`2px solid ${open?"#4ac890":"rgba(150,215,185,0.7)"}`,padding:"16px",
+      boxShadow:"0 3px 18px rgba(30,150,80,0.10)"}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <div style={{width:48,height:48,borderRadius:14,flexShrink:0,
+            background:"linear-gradient(135deg,#c0f0d8,#a0e8c0)",
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{rec.emoji}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:16,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rec.exercise}</div>
+            <div style={{fontSize:12,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginTop:2}}>
+              {rec.date.replace(/-/g,"/")} · {rec.sets.length}セット
+            </div>
+          </div>
+          <div style={{display:"flex",gap:5,flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
+            <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+              background:tc.bg,color:tc.text,border:`1px solid ${tc.border}`,fontFamily:"'Nunito',sans-serif"}}>{rec.type}</span>
+            <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,
+              background:"#e8f8f0",color:"#1a7a4a",border:"1px solid #a0d8b8",
+              fontFamily:"'Noto Sans JP',sans-serif"}}>{rec.bodyPart}</span>
+          </div>
+        </div>
+      </div>
+      {open&&(
+        <div style={{marginTop:10,borderTop:"1.5px dashed #a0d8b8",paddingTop:12}}>
+          {rec.notes&&(
+            <div style={{fontSize:13,color:"#3a7a5a",padding:"10px 14px",marginBottom:12,
+              background:"#f0faf5",borderRadius:12,borderLeft:"4px solid #4ac890",
+              fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{rec.notes}</div>
+          )}
+          {rec.mediaKey ? (
+            <MediaViewer mediaKey={rec.mediaKey} mediaType={rec.mediaType}/>
+          ) : (
+            <div onClick={()=>fileRef.current?.click()} style={{
+              width:"100%",height:110,borderRadius:14,cursor:"pointer",
+              background:"linear-gradient(135deg,#e8f8f0,#d8f4e8)",
+              border:"2px dashed #7acca0",
+              display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,
+              WebkitTapHighlightColor:"transparent"}}>
+              {uploading ? (
+                <div style={{fontSize:13,color:"#3a9a6a",fontFamily:"'Noto Sans JP',sans-serif"}}>
+                  <span style={{animation:"spin 1s linear infinite",display:"inline-block",marginRight:8}}>🌿</span>
+                  アップロード中...
+                </div>
+              ) : (
+                <>
+                  <div style={{fontSize:28}}>📸</div>
+                  <div style={{fontSize:13,color:"#3a9a6a",fontFamily:"'Noto Sans JP',sans-serif"}}>写真・動画を追加</div>
+                </>
+              )}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*,video/*" style={{display:"none"}}
+            onChange={handleFileChange}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TrainingTab({currentUser}) {
   const [training,setTraining]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -269,7 +376,6 @@ function TrainingTab({currentUser}) {
     if(!addForm.exercise.trim())return;
     setSaving(true);
     try {
-      const sender=currentUser.role==="trainer"?"Tatsuro":"Ayumi";
       await notionCreate(DB.training,{
         "種目名":{title:[{text:{content:addForm.exercise}}]},
         "部位":{select:{name:addForm.bodyPart}},
@@ -277,7 +383,7 @@ function TrainingTab({currentUser}) {
         "セット数":{number:addForm.sets.length},
         "メモ":{rich_text:addForm.notes?[{text:{content:addForm.notes}}]:[]},
         "日付":{date:{start:new Date().toISOString().slice(0,10)}},
-        "追加者":{select:{name:sender}},
+        "追加者":{select:{name:"Ayumi"}},
         "完了":{checkbox:false},
       });
       setAddForm({exercise:"",bodyPart:"胸",type:"マシーン",sets:[{weight:"",reps:""}],notes:"",emoji:"🤜"});
@@ -288,13 +394,23 @@ function TrainingTab({currentUser}) {
     setSaving(false);
   };
 
+  const handleMediaUpload=async(recordId, key, mediaType)=>{
+    try {
+      await notionUpdate(recordId,{
+        "メディアキー":{rich_text:[{text:{content:key}}]},
+        "メディアタイプ":{select:{name:mediaType}},
+      });
+      showToast("✅ 写真・動画を保存しました！");
+      await load();
+    } catch(e){showToast("⚠️ 保存に失敗しました",false);}
+  };
+
   const filtered=training.filter(r=>(fp==="すべて"||r.bodyPart===fp)&&(ft==="すべて"||r.type===ft));
   const grouped=filtered.reduce((acc,r)=>{if(!acc[r.date])acc[r.date]=[];acc[r.date].push(r);return acc;},{});
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
       {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
-
       <div style={{overflowX:"auto",marginBottom:10,WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",gap:8,paddingBottom:4,width:"max-content"}}>
           {BODY_PARTS.map(p=>(
@@ -339,39 +455,9 @@ function TrainingTab({currentUser}) {
                 <span>{recs.length}種目</span>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {recs.map(r=>{
-                  const tc=TYPE_COL[r.type]||{};
-                  return (
-                    <div key={r.id} style={{
-                      background:"rgba(255,255,255,0.88)",borderRadius:20,
-                      border:"2px solid rgba(150,215,185,0.7)",padding:"16px",
-                      boxShadow:"0 3px 18px rgba(30,150,80,0.10)"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                        <div style={{width:48,height:48,borderRadius:14,flexShrink:0,
-                          background:"linear-gradient(135deg,#c0f0d8,#a0e8c0)",
-                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:26}}>{r.emoji}</div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:16,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",
-                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.exercise}</div>
-                          <div style={{fontSize:12,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginTop:2}}>
-                            {r.date.replace(/-/g,"/")} · {r.sets.length}セット
-                            {r.addedBy==="Tatsuro"&&<span style={{marginLeft:6,color:"#1a5a8a"}}>🏋️ Taturo</span>}
-                          </div>
-                        </div>
-                        <div style={{display:"flex",gap:5,flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
-                          <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
-                            background:tc.bg,color:tc.text,border:`1px solid ${tc.border}`,fontFamily:"'Nunito',sans-serif"}}>{r.type}</span>
-                          <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,
-                            background:"#e8f8f0",color:"#1a7a4a",border:"1px solid #a0d8b8",
-                            fontFamily:"'Noto Sans JP',sans-serif"}}>{r.bodyPart}</span>
-                        </div>
-                      </div>
-                      {r.notes&&<div style={{fontSize:13,color:"#3a7a5a",padding:"10px 14px",
-                        background:"#f0faf5",borderRadius:12,borderLeft:"4px solid #4ac890",
-                        fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{r.notes}</div>}
-                    </div>
-                  );
-                })}
+                {recs.map(r=>(
+                  <TrainingCard key={r.id} rec={r} onMediaUpload={handleMediaUpload}/>
+                ))}
               </div>
             </div>
           ))}
@@ -470,7 +556,6 @@ function TrainingTab({currentUser}) {
   );
 }
 
-// ─── 食事・栄養タブ ───────────────────────────────────────
 function HealthTab({currentUser}) {
   const [health,setHealth]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -609,7 +694,6 @@ function HealthTab({currentUser}) {
   );
 }
 
-// ─── データタブ ───────────────────────────────────────────
 function DataTab() {
   const [body,setBody]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -740,7 +824,6 @@ function DataTab() {
   );
 }
 
-// ─── メッセージタブ ───────────────────────────────────────
 function MessageTab({currentUser}) {
   const [msgs,setMsgs]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -763,13 +846,11 @@ function MessageTab({currentUser}) {
   const handleSend=async()=>{
     if(!form.content.trim())return;
     setSaving(true);
-    const isTrainer=currentUser.role==="trainer";
-    const sender=isTrainer?"Tatsuro → Ayumi":"Ayumi → Tatsuro";
     try {
       await notionCreate(DB.message,{
         "タイトル":{title:[{text:{content:form.title||form.content.slice(0,20)}}]},
         "内容":{rich_text:[{text:{content:form.content}}]},
-        "送信者":{select:{name:sender}},
+        "送信者":{select:{name:"Ayumi → Tatsuro"}},
         "カテゴリ":{select:{name:form.category}},
         "返信済み":{checkbox:false},
         "日付":{date:{start:new Date().toISOString().slice(0,10)}},
@@ -781,14 +862,12 @@ function MessageTab({currentUser}) {
     setSaving(false);
   };
 
-  const isTrainer=currentUser.role==="trainer";
-
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
       {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
       <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:16}}>
         <div style={{fontSize:15,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",marginBottom:10}}>
-          {isTrainer?"🏋️ Ayumiへメッセージ":"💬 Taturoへメッセージ"}
+          💬 Taturoへメッセージ
         </div>
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
           {CATS.map(c=>(
@@ -832,7 +911,6 @@ function MessageTab({currentUser}) {
                   <span style={{fontSize:11,color:"#8ab8a0"}}>{m.date.replace(/-/g,"/")}</span>
                   <span style={{padding:"2px 8px",borderRadius:20,fontSize:10,
                     background:"rgba(255,255,255,0.6)",color:"#5a9a7a"}}>{m.category}</span>
-                  {m.replied&&<span style={{fontSize:11,color:"#1a8a5a"}}>✅</span>}
                 </div>
                 {m.title&&<div style={{fontSize:13,fontWeight:700,color:"#1a4a3a",marginBottom:4,fontFamily:"'Nunito',sans-serif"}}>{m.title}</div>}
                 <div style={{fontSize:14,color:"#2a4a3a",fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{m.content}</div>
@@ -846,7 +924,6 @@ function MessageTab({currentUser}) {
   );
 }
 
-// ─── メインアプリ ──────────────────────────────────────────
 function App() {
   const [user,setUser]=useState(null);
   const [tab,setTab]=useState(0);
