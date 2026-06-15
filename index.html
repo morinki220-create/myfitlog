@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -17,6 +16,7 @@
     @keyframes popIn { 0%{transform:scale(0.75);opacity:0} 70%{transform:scale(1.04)} 100%{transform:scale(1);opacity:1} }
     @keyframes shakePop { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
     @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet"/>
@@ -63,6 +63,42 @@ async function uploadToR2(file, key) {
     body: file,
   });
   return await res.json();
+}
+
+// Claude APIでメッセージ生成
+async function generateClaudeMessage(sleepData) {
+  const prompt = `あなたはフィットネス＆生活改善コーチのClaudeです。
+以下のユーザーの昨日の記録を見て、今朝の短い励ましメッセージを日本語で生成してください。
+メッセージは2〜3文で、絵文字を使って明るく、具体的に褒めたり、改善ポイントをやさしく伝えてください。
+
+昨日の記録:
+- 就寝: ${sleepData.bedtime || "未記録"}
+- 起床: ${sleepData.waketime || "未記録"}
+- 睡眠時間: ${sleepData.sleepHours || 0}時間
+- 仮眠キープ: ${sleepData.napKept ? "できた✅" : "できなかった❌"}
+- 白湯: ${sleepData.hotwater ? "✅" : "❌"}
+- 日経: ${sleepData.nikkei ? "✅" : "❌"}
+- 朝日: ${sleepData.sunlight ? "✅" : "❌"}
+- 外気: ${sleepData.outside ? "✅" : "❌"}
+- 気分: ${sleepData.mood}/5
+
+メッセージだけを返してください（前置き不要）。`;
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text || "今日も一日頑張りましょう！💪";
+  } catch(e) {
+    return "今日も一日頑張りましょう！💪🌿";
+  }
 }
 
 const BP_ICONS = {すべて:"🏅",胸:"🤜",背中:"🔄",脚:"🦵",肩:"🤸",腕:"💪",体幹:"⚡",臀部:"🍃"};
@@ -200,10 +236,28 @@ function MediaViewer({mediaKey, mediaType}) {
       {isVideo ? (
         <video controls style={{width:"100%",maxHeight:300,display:"block"}} src={url}/>
       ) : (
-        <img src={url} alt="トレーニング写真" style={{width:"100%",maxHeight:300,objectFit:"cover",display:"block"}}/>
+        <img src={url} alt="写真" style={{width:"100%",maxHeight:300,objectFit:"cover",display:"block"}}/>
       )}
     </div>
   );
+}
+
+function parseTraining(page) {
+  const p = page.properties;
+  const sets = p["セット数"]?.number || 1;
+  const bodyPart = p["部位"]?.select?.name || "胸";
+  return {
+    id: page.id,
+    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
+    exercise: p["種目名"]?.title?.[0]?.plain_text || "",
+    bodyPart,
+    type: p["タイプ"]?.select?.name || "マシーン",
+    sets: Array.from({length:sets}, ()=>({reps:10})),
+    notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
+    emoji: BP_ICONS[bodyPart] || "💪",
+    mediaKey: p["メディアキー"]?.rich_text?.[0]?.plain_text || "",
+    mediaType: p["メディアタイプ"]?.rich_text?.[0]?.plain_text || "",
+  };
 }
 
 function TrainingCard({rec, onMediaUpload}) {
@@ -231,7 +285,7 @@ function TrainingCard({rec, onMediaUpload}) {
     <div style={{background:"rgba(255,255,255,0.88)",borderRadius:20,
       border:`2px solid ${open?"#4ac890":"rgba(150,215,185,0.7)"}`,padding:"16px",
       boxShadow:"0 3px 18px rgba(30,150,80,0.10)"}}>
-      <div onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{cursor:"pointer"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
           <div style={{width:48,height:48,borderRadius:14,flexShrink:0,
             background:"linear-gradient(135deg,#c0f0d8,#a0e8c0)",
@@ -288,25 +342,6 @@ function TrainingCard({rec, onMediaUpload}) {
   );
 }
 
-function parseTraining(page) {
-  const p = page.properties;
-  const sets = p["セット数"]?.number || 1;
-  const bodyPart = p["部位"]?.select?.name || "胸";
-  return {
-    id: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
-    exercise: p["種目名"]?.title?.[0]?.plain_text || "",
-    bodyPart,
-    type: p["タイプ"]?.select?.name || "マシーン",
-    sets: Array.from({length:sets}, ()=>({reps:10})),
-    notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
-    emoji: BP_ICONS[bodyPart] || "💪",
-    addedBy: p["追加者"]?.select?.name || "Ayumi",
-    mediaKey: p["メディアキー"]?.rich_text?.[0]?.plain_text || "",
-    mediaType: p["メディアタイプ"]?.rich_text?.[0]?.plain_text || "",
-  };
-}
-
 function TrainingTab() {
   const [training,setTraining]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -319,7 +354,6 @@ function TrainingTab() {
   const emojis=["🤜","💪","🦵","🏅","🔄","⚡","🤸","🏃","🧘","🏊","🚴","🎯"];
 
   const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
-
   const load=useCallback(async()=>{
     setLoading(true);
     try {
@@ -459,7 +493,7 @@ function TrainingTab() {
               onChange={e=>setAddForm(f=>({...f,exercise:e.target.value}))}
               style={{width:"100%",padding:"14px 16px",borderRadius:14,marginBottom:12,
                 border:"2px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-                fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",outline:"none"}}/>
+                fontSize:16,outline:"none"}}/>
             <div style={{display:"flex",gap:10,marginBottom:12}}>
               <select value={addForm.bodyPart} onChange={e=>setAddForm(f=>({...f,bodyPart:e.target.value}))}
                 style={{flex:1,padding:"13px",borderRadius:14,border:"2px solid #a0d8b8",
@@ -507,7 +541,6 @@ function TrainingTab() {
   );
 }
 
-// ─── 食事・写真タブ ────────────────────────────────────────
 function FoodTab() {
   const [foods,setFoods]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -588,13 +621,12 @@ function FoodTab() {
       </button>
       {showForm&&(
         <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:16}}>
-          {/* 写真選択エリア */}
           <div onClick={()=>fileRef.current?.click()} style={{
             width:"100%",minHeight:160,borderRadius:14,cursor:"pointer",marginBottom:12,
             background:form.mediaKey?"#000":"linear-gradient(135deg,#e8f8f0,#d8f4e8)",
             border:form.mediaKey?"none":"2px dashed #7acca0",
             display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-            overflow:"hidden",position:"relative"}}>
+            overflow:"hidden"}}>
             {form.mediaKey ? (
               <img src={`${WORKER_URL}/r2/${form.mediaKey}`} alt="選択した写真"
                 style={{width:"100%",maxHeight:200,objectFit:"cover",display:"block"}}/>
@@ -615,7 +647,7 @@ function FoodTab() {
             onChange={e=>setForm(f=>({...f,memo:e.target.value}))}
             style={{width:"100%",padding:"13px",borderRadius:12,marginBottom:12,
               border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-              fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:100,resize:"vertical",outline:"none"}}/>
+              fontSize:16,minHeight:100,resize:"vertical",outline:"none"}}/>
           <button onClick={handleSave} disabled={saving||(!form.mediaKey&&!form.memo)} style={{
             width:"100%",padding:"14px",borderRadius:14,border:"none",minHeight:52,
             background:saving||(!form.mediaKey&&!form.memo)?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",
@@ -629,9 +661,7 @@ function FoodTab() {
           {foods.map(r=>(
             <div key={r.id} style={{background:"rgba(255,255,255,0.88)",borderRadius:18,
               border:"2px solid rgba(150,215,185,0.7)",overflow:"hidden"}}>
-              {r.mediaKey&&(
-                <MediaViewer mediaKey={r.mediaKey} mediaType={r.mediaType}/>
-              )}
+              {r.mediaKey&&<MediaViewer mediaKey={r.mediaKey} mediaType={r.mediaType}/>}
               <div style={{padding:"12px 14px"}}>
                 <div style={{fontSize:11,color:"#8ab8a0",marginBottom:4,fontFamily:"'Noto Sans JP',sans-serif"}}>{r.date.replace(/-/g,"/")}</div>
                 {r.memo&&<div style={{fontSize:14,color:"#2a4a3a",fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.7}}>{r.memo}</div>}
@@ -645,13 +675,16 @@ function FoodTab() {
   );
 }
 
-// ─── 睡眠・習慣タブ ───────────────────────────────────────
 function SleepTab() {
   const [records,setRecords]=useState([]);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
+  const [generatingMsg,setGeneratingMsg]=useState(false);
+  const [claudeMessage,setClaudeMessage]=useState(null);
   const [toast,setToast]=useState(null);
   const [showForm,setShowForm]=useState(false);
+
+  const today = new Date().toISOString().slice(0,10);
   const [form,setForm]=useState({
     bedtime:"23:00", waketime:"07:00",
     napKept:true,
@@ -697,11 +730,23 @@ function SleepTab() {
     } catch(e){console.error(e);}
     setLoading(false);
   },[]);
+
   useEffect(()=>{load();},[load]);
+
+  // 最新の記録を見てClaudeメッセージを生成
+  useEffect(()=>{
+    if(records.length>0 && !claudeMessage) {
+      const latest = records[0];
+      setGeneratingMsg(true);
+      generateClaudeMessage(latest).then(msg=>{
+        setClaudeMessage(msg);
+        setGeneratingMsg(false);
+      });
+    }
+  },[records]);
 
   const handleSave=async()=>{
     setSaving(true);
-    const today=new Date().toISOString().slice(0,10);
     const sleepHours=Number(calcSleep(form.bedtime,form.waketime));
     try {
       await notionCreate(DB.sleep,{
@@ -720,6 +765,7 @@ function SleepTab() {
       });
       setShowForm(false);
       showToast("✅ 今日の記録を保存しました！");
+      setClaudeMessage(null);
       await load();
     } catch(e){showToast("⚠️ 保存に失敗しました",false);}
     setSaving(false);
@@ -727,13 +773,57 @@ function SleepTab() {
 
   const moodEmojis=["😴","😪","😐","😊","🌟"];
   const sleepHours=calcSleep(form.bedtime,form.waketime);
-
-  // 直近7日のグラフデータ
   const last7=records.slice(0,7).reverse();
+
+  // 連続記録日数
+  const streak = records.filter((r,i)=>{
+    if(i===0) return true;
+    const d1=new Date(records[i-1].date);
+    const d2=new Date(r.date);
+    return (d1-d2)/(1000*60*60*24)===1;
+  }).length;
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
       {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
+
+      {/* Claudeからのメッセージ */}
+      {(generatingMsg||claudeMessage)&&(
+        <div style={{
+          background:"linear-gradient(135deg,#1a4a7a,#2a6aaa)",
+          borderRadius:20,padding:"16px",marginBottom:16,
+          boxShadow:"0 4px 20px rgba(30,80,160,0.25)",
+          animation:"fadeIn 0.5s ease"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <span style={{fontSize:20}}>🤖</span>
+            <span style={{fontSize:13,fontWeight:800,color:"rgba(255,255,255,0.9)",fontFamily:"'Nunito',sans-serif"}}>Claudeからのメッセージ</span>
+          </div>
+          {generatingMsg ? (
+            <div style={{fontSize:13,color:"rgba(255,255,255,0.7)",fontFamily:"'Noto Sans JP',sans-serif",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>🌿</span>
+              メッセージを生成中...
+            </div>
+          ) : (
+            <div style={{fontSize:14,color:"#fff",fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.8}}>
+              {claudeMessage}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 連続記録バッジ */}
+      {streak>=2&&(
+        <div style={{
+          background:"linear-gradient(135deg,#ffb347,#ff8c00)",
+          borderRadius:16,padding:"12px 16px",marginBottom:16,
+          display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:24}}>🔥</span>
+          <div>
+            <div style={{fontSize:15,fontWeight:800,color:"#fff",fontFamily:"'Nunito',sans-serif"}}>{streak}日連続記録中！</div>
+            <div style={{fontSize:11,color:"rgba(255,255,255,0.85)",fontFamily:"'Noto Sans JP',sans-serif"}}>この調子で続けましょう！</div>
+          </div>
+        </div>
+      )}
 
       {/* 今日の記録ボタン */}
       <button onClick={()=>setShowForm(s=>!s)} style={{
@@ -747,6 +837,12 @@ function SleepTab() {
 
       {showForm&&(
         <div style={{background:"rgba(255,255,255,0.96)",borderRadius:20,border:"2px solid #a0c8e8",padding:"16px",marginBottom:16}}>
+          {/* 今日の日付表示 */}
+          <div style={{textAlign:"center",marginBottom:14,fontSize:13,color:"#5a8aaa",fontFamily:"'Noto Sans JP',sans-serif",
+            background:"#f0f6fc",borderRadius:10,padding:"8px"}}>
+            📅 {today.replace(/-/g,"/")}（今日）の記録
+          </div>
+
           {/* 就寝・起床 */}
           <div style={{marginBottom:16}}>
             <div style={{fontSize:14,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",marginBottom:10}}>🛏 就寝・起床時刻</div>
@@ -764,7 +860,8 @@ function SleepTab() {
                     background:"#f0f6fc",color:"#1a3a5a",fontSize:16,outline:"none"}}/>
               </div>
             </div>
-            <div style={{textAlign:"center",marginTop:8,fontSize:16,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif"}}>
+            <div style={{textAlign:"center",marginTop:10,fontSize:18,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",
+              background:"linear-gradient(135deg,#e8f4fc,#d8ecf8)",borderRadius:12,padding:"10px"}}>
               😴 睡眠時間：{sleepHours}時間
             </div>
           </div>
@@ -816,7 +913,6 @@ function SleepTab() {
             </div>
           </div>
 
-          {/* メモ */}
           <textarea placeholder="メモ（気づいたことなど）" value={form.memo}
             onChange={e=>setForm(f=>({...f,memo:e.target.value}))}
             style={{width:"100%",padding:"12px",borderRadius:12,marginBottom:12,
