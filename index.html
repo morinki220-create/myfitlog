@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -29,15 +30,14 @@ const { useState, useRef, useEffect, useCallback } = React;
 const WORKER_URL = "https://myfitlog-notion-proxy.morinki220.workers.dev";
 const DB = {
   training: "3470bbb3ed76818e969cc5a61f3dc492",
-  health:   "3470bbb3ed76814db096e4c8d78ddca2",
-  body:     "3470bbb3ed7681ca89e5fed0efe804fb",
-  message:  "3470bbb3ed7681ce9d94eab4e5430bcb",
+  food:     "3470bbb3ed76814db096e4c8d78ddca2",
+  sleep:    "3470bbb3ed7681ca89e5fed0efe804fb",
 };
 
 async function notionQuery(dbId, sorts=[]) {
   const res = await fetch(`${WORKER_URL}/notion/databases/${dbId}/query`, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({sorts}),
+    body: JSON.stringify({sorts, page_size: 50}),
   });
   const data = await res.json();
   return data.results || [];
@@ -66,78 +66,19 @@ async function uploadToR2(file, key) {
 }
 
 const BP_ICONS = {すべて:"🏅",胸:"🤜",背中:"🔄",脚:"🦵",肩:"🤸",腕:"💪",体幹:"⚡",臀部:"🍃"};
-
-function parseTraining(page) {
-  const p = page.properties;
-  const sets = p["セット数"]?.number || 1;
-  return {
-    id: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
-    exercise: p["種目名"]?.title?.[0]?.plain_text || "",
-    bodyPart: p["部位"]?.select?.name || "胸",
-    type: p["タイプ"]?.select?.name || "マシーン",
-    sets: Array.from({length:sets}, ()=>({reps:10})),
-    notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
-    emoji: BP_ICONS[p["部位"]?.select?.name] || "💪",
-    addedBy: p["追加者"]?.select?.name || "Ayumi",
-    mediaKey: p["メディアキー"]?.rich_text?.[0]?.plain_text || "",
-    mediaType: p["メディアタイプ"]?.rich_text?.[0]?.plain_text || "" || "",
-  };
-}
-function parseHealth(page) {
-  const p = page.properties;
-  return {
-    id: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
-    category: p["タイミング"]?.select?.name || "朝食",
-    title: p["食事内容"]?.title?.[0]?.plain_text || "",
-    content: p["メモ"]?.rich_text?.[0]?.plain_text || "",
-    kcal: p["カロリー(kcal)"]?.number || 0,
-    protein: p["タンパク質(g)"]?.number || 0,
-    carb: p["炭水化物(g)"]?.number || 0,
-    fat: p["脂質(g)"]?.number || 0,
-  };
-}
-function parseBody(page) {
-  const p = page.properties;
-  return {
-    id: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
-    weight: p["体重(kg)"]?.number || 0,
-    fat: p["体脂肪率(%)"]?.number || 0,
-    muscle: p["筋肉量(kg)"]?.number || 0,
-    bmi: p["BMI"]?.number || 0,
-    notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
-  };
-}
-function parseMessage(page) {
-  const p = page.properties;
-  return {
-    id: page.id,
-    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
-    title: p["タイトル"]?.title?.[0]?.plain_text || "",
-    content: p["内容"]?.rich_text?.[0]?.plain_text || "",
-    sender: p["送信者"]?.select?.name || "",
-    category: p["カテゴリ"]?.select?.name || "",
-    replied: p["返信済み"]?.checkbox || false,
-  };
-}
-
-const USERS = {
-  Ayumi: {password:"ayumi2021", role:"member", name:"Ayumi", icon:"🌿"},
-};
-
-const TABS      = ["トレーニング","食事・栄養","データ","メッセージ"];
-const TAB_ICONS = ["💪","🌱","📊","💬"];
-const BODY_PARTS= ["すべて","胸","背中","脚","肩","腕","体幹","臀部"];
-const TYPES     = ["すべて","自重","マシーン","フリーウェイト"];
-const TYPE_COL  = {
+const TYPE_COL = {
   自重:          {bg:"#e8f8f0",text:"#1a7a4a",border:"#7acca0"},
   マシーン:      {bg:"#e8f4f8",text:"#1a5a7a",border:"#7abccc"},
   フリーウェイト:{bg:"#f8f4e8",text:"#7a5a1a",border:"#ccb87a"},
 };
-const HEALTH_CATS = ["すべて","朝食","昼食","夕食","間食","プロテイン"];
-const CAT_ICONS   = {すべて:"🌱",朝食:"🌅",昼食:"☀️",夕食:"🌙",間食:"🍎",プロテイン:"💪"};
+
+const USERS = {
+  Ayumi: {password:"ayumi2021", role:"member", name:"Ayumi", icon:"🌿"},
+};
+const TABS      = ["トレーニング","食事・写真","睡眠・習慣"];
+const TAB_ICONS = ["💪","🥗","🌙"];
+const BODY_PARTS= ["すべて","胸","背中","脚","肩","腕","体幹","臀部"];
+const TYPES     = ["すべて","自重","マシーン","フリーウェイト"];
 
 function BgDeco() {
   const s=[
@@ -221,7 +162,7 @@ function LoginScreen({onLogin}) {
                 transition:"all 0.2s",WebkitTapHighlightColor:"transparent",touchAction:"manipulation"}}>
                 <div style={{fontSize:36,marginBottom:6}}>{u.icon}</div>
                 <div style={{fontSize:17}}>{u.name}</div>
-                <div style={{fontSize:11,opacity:0.8,marginTop:3}}>{u.role==="trainer"?"トレーナー":"メンバー"}</div>
+                <div style={{fontSize:11,opacity:0.8,marginTop:3}}>メンバー</div>
               </button>
             ))}
           </div>
@@ -304,7 +245,7 @@ function TrainingCard({rec, onMediaUpload}) {
           </div>
           <div style={{display:"flex",gap:5,flexShrink:0,flexDirection:"column",alignItems:"flex-end"}}>
             <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
-              background:tc.bg,color:tc.text,border:`1px solid ${tc.border}`,fontFamily:"'Nunito',sans-serif"}}>{rec.type}</span>
+              background:tc.bg||"#e8f8f0",color:tc.text||"#1a7a4a",border:`1px solid ${tc.border||"#a0d8b8"}`,fontFamily:"'Nunito',sans-serif"}}>{rec.type}</span>
             <span style={{padding:"3px 10px",borderRadius:20,fontSize:11,
               background:"#e8f8f0",color:"#1a7a4a",border:"1px solid #a0d8b8",
               fontFamily:"'Noto Sans JP',sans-serif"}}>{rec.bodyPart}</span>
@@ -325,8 +266,7 @@ function TrainingCard({rec, onMediaUpload}) {
               width:"100%",height:110,borderRadius:14,cursor:"pointer",
               background:"linear-gradient(135deg,#e8f8f0,#d8f4e8)",
               border:"2px dashed #7acca0",
-              display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,
-              WebkitTapHighlightColor:"transparent"}}>
+              display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6}}>
               {uploading ? (
                 <div style={{fontSize:13,color:"#3a9a6a",fontFamily:"'Noto Sans JP',sans-serif"}}>
                   <span style={{animation:"spin 1s linear infinite",display:"inline-block",marginRight:8}}>🌿</span>
@@ -348,7 +288,26 @@ function TrainingCard({rec, onMediaUpload}) {
   );
 }
 
-function TrainingTab({currentUser}) {
+function parseTraining(page) {
+  const p = page.properties;
+  const sets = p["セット数"]?.number || 1;
+  const bodyPart = p["部位"]?.select?.name || "胸";
+  return {
+    id: page.id,
+    date: p["日付"]?.date?.start || new Date().toISOString().slice(0,10),
+    exercise: p["種目名"]?.title?.[0]?.plain_text || "",
+    bodyPart,
+    type: p["タイプ"]?.select?.name || "マシーン",
+    sets: Array.from({length:sets}, ()=>({reps:10})),
+    notes: p["メモ"]?.rich_text?.[0]?.plain_text || "",
+    emoji: BP_ICONS[bodyPart] || "💪",
+    addedBy: p["追加者"]?.select?.name || "Ayumi",
+    mediaKey: p["メディアキー"]?.rich_text?.[0]?.plain_text || "",
+    mediaType: p["メディアタイプ"]?.rich_text?.[0]?.plain_text || "",
+  };
+}
+
+function TrainingTab() {
   const [training,setTraining]=useState([]);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
@@ -369,7 +328,6 @@ function TrainingTab({currentUser}) {
     } catch(e){console.error(e);}
     setLoading(false);
   },[]);
-
   useEffect(()=>{load();},[load]);
 
   const handleAdd=async()=>{
@@ -388,7 +346,7 @@ function TrainingTab({currentUser}) {
       });
       setAddForm({exercise:"",bodyPart:"胸",type:"マシーン",sets:[{weight:"",reps:""}],notes:"",emoji:"🤜"});
       setShowAdd(false);
-      showToast("✅ Notionに保存しました！");
+      showToast("✅ 保存しました！");
       await load();
     } catch(e){showToast("⚠️ 保存に失敗しました",false);}
     setSaving(false);
@@ -440,9 +398,9 @@ function TrainingTab({currentUser}) {
       <button onClick={load} style={{
         width:"100%",padding:"11px",borderRadius:14,marginBottom:14,
         background:"rgba(255,255,255,0.8)",border:"1.5px solid #a0d8b8",
-        color:"#1a7a4a",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif",
-        touchAction:"manipulation"}}>🔄 最新データを取得</button>
-
+        color:"#1a7a4a",fontSize:13,cursor:"pointer",fontFamily:"'Noto Sans JP',sans-serif"}}>
+        🔄 最新データを取得
+      </button>
       {loading?<LoadingSpinner msg="トレーニング記録を読み込み中..."/>:(
         <>
           <div style={{fontSize:12,fontWeight:800,color:"#2a8a5a",marginBottom:14,fontFamily:"'Nunito',sans-serif"}}>{filtered.length} RECORDS 💪</div>
@@ -455,9 +413,7 @@ function TrainingTab({currentUser}) {
                 <span>{recs.length}種目</span>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {recs.map(r=>(
-                  <TrainingCard key={r.id} rec={r} onMediaUpload={handleMediaUpload}/>
-                ))}
+                {recs.map(r=><TrainingCard key={r.id} rec={r} onMediaUpload={handleMediaUpload}/>)}
               </div>
             </div>
           ))}
@@ -469,7 +425,6 @@ function TrainingTab({currentUser}) {
           )}
         </>
       )}
-
       {!showAdd&&(
         <button onClick={()=>setShowAdd(true)} style={{
           position:"fixed",bottom:90,right:20,width:56,height:56,borderRadius:"50%",
@@ -478,7 +433,6 @@ function TrainingTab({currentUser}) {
           display:"flex",alignItems:"center",justifyContent:"center",
           boxShadow:"0 4px 20px rgba(30,140,80,0.45)",touchAction:"manipulation"}}>＋</button>
       )}
-
       {showAdd&&(
         <div style={{position:"fixed",inset:0,background:"rgba(20,100,50,0.25)",
           display:"flex",alignItems:"flex-end",zIndex:1000,backdropFilter:"blur(6px)"}}
@@ -498,9 +452,7 @@ function TrainingTab({currentUser}) {
                 <button key={e} onClick={()=>setAddForm(f=>({...f,emoji:e}))} style={{
                   width:44,height:44,borderRadius:12,fontSize:22,cursor:"pointer",
                   background:addForm.emoji===e?"#c0f0d8":"#e8f8f0",
-                  border:addForm.emoji===e?"2px solid #1a7a4a":"1.5px solid #a0d8b8"}}>
-                  {e}
-                </button>
+                  border:addForm.emoji===e?"2px solid #1a7a4a":"1.5px solid #a0d8b8"}}>{e}</button>
               ))}
             </div>
             <input placeholder="種目名" value={addForm.exercise}
@@ -511,12 +463,12 @@ function TrainingTab({currentUser}) {
             <div style={{display:"flex",gap:10,marginBottom:12}}>
               <select value={addForm.bodyPart} onChange={e=>setAddForm(f=>({...f,bodyPart:e.target.value}))}
                 style={{flex:1,padding:"13px",borderRadius:14,border:"2px solid #a0d8b8",
-                  background:"#f0faf5",color:"#1a4a3a",fontSize:16,fontFamily:"'Noto Sans JP',sans-serif"}}>
+                  background:"#f0faf5",color:"#1a4a3a",fontSize:16}}>
                 {BODY_PARTS.filter(b=>b!=="すべて").map(o=><option key={o}>{o}</option>)}
               </select>
               <select value={addForm.type} onChange={e=>setAddForm(f=>({...f,type:e.target.value}))}
                 style={{flex:1,padding:"13px",borderRadius:14,border:"2px solid #a0d8b8",
-                  background:"#f0faf5",color:"#1a4a3a",fontSize:16,fontFamily:"'Noto Sans JP',sans-serif"}}>
+                  background:"#f0faf5",color:"#1a4a3a",fontSize:16}}>
                 {TYPES.filter(t=>t!=="すべて").map(o=><option key={o}>{o}</option>)}
               </select>
             </div>
@@ -534,8 +486,7 @@ function TrainingTab({currentUser}) {
               ))}
               <button onClick={()=>setAddForm(f=>({...f,sets:[...f.sets,{weight:"",reps:""}]}))}
                 style={{width:"100%",padding:"11px",borderRadius:12,background:"#e8f8f0",
-                  border:"1.5px dashed #a0d8b8",color:"#1a7a4a",cursor:"pointer",
-                  fontSize:14,fontFamily:"'Noto Sans JP',sans-serif",minHeight:44}}>
+                  border:"1.5px dashed #a0d8b8",color:"#1a7a4a",cursor:"pointer",fontSize:14,minHeight:44}}>
                 ＋ セットを追加
               </button>
             </div>
@@ -543,7 +494,7 @@ function TrainingTab({currentUser}) {
               onChange={e=>setAddForm(f=>({...f,notes:e.target.value}))}
               style={{width:"100%",padding:"13px",borderRadius:14,marginBottom:14,
                 border:"2px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-                fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:80,resize:"vertical"}}/>
+                fontSize:16,minHeight:80,resize:"vertical"}}/>
             <button onClick={handleAdd} disabled={saving} style={{width:"100%",padding:"16px",borderRadius:16,border:"none",
               background:saving?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",color:"#fff",fontSize:17,
               fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif",minHeight:56}}>
@@ -556,41 +507,67 @@ function TrainingTab({currentUser}) {
   );
 }
 
-function HealthTab({currentUser}) {
-  const [health,setHealth]=useState([]);
+// ─── 食事・写真タブ ────────────────────────────────────────
+function FoodTab() {
+  const [foods,setFoods]=useState([]);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
+  const [uploading,setUploading]=useState(false);
   const [toast,setToast]=useState(null);
-  const [cat,setCat]=useState("すべて");
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({title:"",timing:"朝食",kcal:"",protein:"",carb:"",fat:"",notes:""});
+  const [form,setForm]=useState({memo:"",mediaKey:"",mediaType:""});
+  const fileRef=useRef(null);
 
   const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
+
+  const parseFood=(page)=>{
+    const p=page.properties;
+    return {
+      id:page.id,
+      date:p["日付"]?.date?.start||new Date().toISOString().slice(0,10),
+      memo:p["メモ"]?.rich_text?.[0]?.plain_text||"",
+      mediaKey:p["メディアキー"]?.rich_text?.[0]?.plain_text||"",
+      mediaType:p["メディアタイプ"]?.rich_text?.[0]?.plain_text||"",
+    };
+  };
+
   const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const pages=await notionQuery(DB.health,[{property:"日付",direction:"descending"}]);
-      setHealth(pages.map(parseHealth));
+      const pages=await notionQuery(DB.food,[{property:"日付",direction:"descending"}]);
+      setFoods(pages.map(parseFood));
     } catch(e){console.error(e);}
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
 
+  const handleFileSelect=async(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    setUploading(true);
+    try {
+      const ext=file.name.split(".").pop();
+      const key=`food/${Date.now()}.${ext}`;
+      const mediaType=file.type.startsWith("video")?"video":"image";
+      await uploadToR2(file,key);
+      setForm(f=>({...f,mediaKey:key,mediaType}));
+      showToast("✅ 写真を選択しました！");
+    } catch(e){showToast("⚠️ 写真の選択に失敗しました",false);}
+    setUploading(false);
+    e.target.value="";
+  };
+
   const handleSave=async()=>{
-    if(!form.title.trim())return;
     setSaving(true);
     try {
-      await notionCreate(DB.health,{
-        "食事内容":{title:[{text:{content:form.title}}]},
-        "タイミング":{select:{name:form.timing}},
-        "カロリー(kcal)":{number:Number(form.kcal)||0},
-        "タンパク質(g)":{number:Number(form.protein)||0},
-        "炭水化物(g)":{number:Number(form.carb)||0},
-        "脂質(g)":{number:Number(form.fat)||0},
-        "メモ":{rich_text:form.notes?[{text:{content:form.notes}}]:[]},
+      await notionCreate(DB.food,{
+        "食事内容":{title:[{text:{content:form.memo||"食事記録"}}]},
+        "メモ":{rich_text:form.memo?[{text:{content:form.memo}}]:[]},
+        "メディアキー":{rich_text:form.mediaKey?[{text:{content:form.mediaKey}}]:[]},
+        "メディアタイプ":{rich_text:form.mediaType?[{text:{content:form.mediaType}}]:[]},
         "日付":{date:{start:new Date().toISOString().slice(0,10)}},
       });
-      setForm({title:"",timing:"朝食",kcal:"",protein:"",carb:"",fat:"",notes:""});
+      setForm({memo:"",mediaKey:"",mediaType:""});
       setShowForm(false);
       showToast("✅ Notionに保存しました！");
       await load();
@@ -598,326 +575,331 @@ function HealthTab({currentUser}) {
     setSaving(false);
   };
 
-  const filtered=health.filter(r=>cat==="すべて"||r.category===cat);
-
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
       {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
-      <div style={{overflowX:"auto",marginBottom:14,WebkitOverflowScrolling:"touch"}}>
-        <div style={{display:"flex",gap:8,paddingBottom:4,width:"max-content"}}>
-          {HEALTH_CATS.map(c=>(
-            <button key={c} onClick={()=>setCat(c)} style={{
-              padding:"9px 16px",borderRadius:22,minHeight:44,
-              background:cat===c?"linear-gradient(135deg,#4ac890,#1a7a4a)":"rgba(255,255,255,0.78)",
-              color:cat===c?"#fff":"#3a8a5a",fontSize:13,cursor:"pointer",
-              fontFamily:"'Noto Sans JP',sans-serif",whiteSpace:"nowrap",
-              border:cat===c?"none":"1.5px solid rgba(130,205,165,0.8)",
-              fontWeight:cat===c?700:400,touchAction:"manipulation"}}>
-              {CAT_ICONS[c]} {c}
-            </button>
-          ))}
-        </div>
-      </div>
       <button onClick={()=>setShowForm(s=>!s)} style={{
-        width:"100%",padding:"15px",borderRadius:16,marginBottom:14,minHeight:52,
+        width:"100%",padding:"15px",borderRadius:16,marginBottom:16,minHeight:52,
         background:showForm?"rgba(200,240,220,0.6)":"linear-gradient(135deg,#4ac890,#1a7a4a)",
         border:showForm?"2px dashed #4ac890":"none",
         color:showForm?"#1a7a4a":"#fff",fontSize:16,fontWeight:900,
         cursor:"pointer",fontFamily:"'Nunito',sans-serif",touchAction:"manipulation"}}>
-        {showForm?"▲ 閉じる":"＋ 食事記録を追加"}
+        {showForm?"▲ 閉じる":"＋ 食事を記録する"}
       </button>
       {showForm&&(
-        <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:14}}>
-          <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-            {HEALTH_CATS.filter(c=>c!=="すべて").map(c=>(
-              <button key={c} onClick={()=>setForm(f=>({...f,timing:c}))} style={{
-                padding:"8px 14px",borderRadius:12,cursor:"pointer",fontSize:13,minHeight:40,
-                background:form.timing===c?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#e8f8f0",
-                color:form.timing===c?"#fff":"#1a7a4a",border:"none",
-                fontFamily:"'Noto Sans JP',sans-serif"}}>
-                {CAT_ICONS[c]} {c}
-              </button>
-            ))}
+        <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:16}}>
+          {/* 写真選択エリア */}
+          <div onClick={()=>fileRef.current?.click()} style={{
+            width:"100%",minHeight:160,borderRadius:14,cursor:"pointer",marginBottom:12,
+            background:form.mediaKey?"#000":"linear-gradient(135deg,#e8f8f0,#d8f4e8)",
+            border:form.mediaKey?"none":"2px dashed #7acca0",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+            overflow:"hidden",position:"relative"}}>
+            {form.mediaKey ? (
+              <img src={`${WORKER_URL}/r2/${form.mediaKey}`} alt="選択した写真"
+                style={{width:"100%",maxHeight:200,objectFit:"cover",display:"block"}}/>
+            ) : uploading ? (
+              <div style={{fontSize:13,color:"#3a9a6a",fontFamily:"'Noto Sans JP',sans-serif"}}>
+                <span style={{animation:"spin 1s linear infinite",display:"inline-block",marginRight:8}}>🌿</span>
+                アップロード中...
+              </div>
+            ) : (
+              <>
+                <div style={{fontSize:40,marginBottom:8}}>📷</div>
+                <div style={{fontSize:14,color:"#3a9a6a",fontFamily:"'Noto Sans JP',sans-serif"}}>写真をタップして選択</div>
+              </>
+            )}
           </div>
-          <input placeholder="食事内容（例：鶏胸肉＋玄米＋サラダ）" value={form.title}
-            onChange={e=>setForm(f=>({...f,title:e.target.value}))}
-            style={{width:"100%",padding:"13px",borderRadius:12,marginBottom:10,
+          <input ref={fileRef} type="file" accept="image/*,video/*" style={{display:"none"}} onChange={handleFileSelect}/>
+          <textarea placeholder="メモ（今日の食事内容など）" value={form.memo}
+            onChange={e=>setForm(f=>({...f,memo:e.target.value}))}
+            style={{width:"100%",padding:"13px",borderRadius:12,marginBottom:12,
               border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-              fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",outline:"none"}}/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-            {[{k:"kcal",ph:"カロリー(kcal)"},{k:"protein",ph:"タンパク質(g)"},{k:"carb",ph:"炭水化物(g)"},{k:"fat",ph:"脂質(g)"}].map(f=>(
-              <input key={f.k} type="number" placeholder={f.ph} value={form[f.k]}
-                onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))}
-                style={{padding:"12px",borderRadius:12,border:"1.5px solid #a0d8b8",
-                  background:"#f0faf5",color:"#1a4a3a",fontSize:16,outline:"none"}}/>
-            ))}
-          </div>
-          <textarea placeholder="メモ" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}
-            style={{width:"100%",padding:"12px",borderRadius:12,marginBottom:10,
-              border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-              fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:70,resize:"vertical"}}/>
-          <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"14px",borderRadius:14,border:"none",
-            background:saving?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",color:"#fff",fontSize:16,
-            fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif"}}>
+              fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:100,resize:"vertical",outline:"none"}}/>
+          <button onClick={handleSave} disabled={saving||(!form.mediaKey&&!form.memo)} style={{
+            width:"100%",padding:"14px",borderRadius:14,border:"none",minHeight:52,
+            background:saving||(!form.mediaKey&&!form.memo)?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",
+            color:"#fff",fontSize:16,fontWeight:900,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}>
             {saving?"保存中...":"Notionに保存 🥗"}
           </button>
         </div>
       )}
       {loading?<LoadingSpinner msg="食事記録を読み込み中..."/>:(
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {filtered.map(r=>(
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {foods.map(r=>(
             <div key={r.id} style={{background:"rgba(255,255,255,0.88)",borderRadius:18,
-              border:"2px solid rgba(150,215,185,0.7)",padding:"16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
-                <div style={{fontSize:24}}>{CAT_ICONS[r.category]||"🥗"}</div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:15,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif"}}>{r.title}</div>
-                  <div style={{fontSize:12,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif"}}>{r.date.replace(/-/g,"/")} · {r.category}</div>
-                </div>
-              </div>
-              {(r.kcal+r.protein+r.carb+r.fat)>0&&(
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-                  {r.kcal>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#fff3e0",color:"#e65100",border:"1px solid #ffcc80"}}>🔥 {r.kcal}kcal</span>}
-                  {r.protein>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#e8f5e9",color:"#2e7d32",border:"1px solid #a5d6a7"}}>💪 P:{r.protein}g</span>}
-                  {r.carb>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#e3f2fd",color:"#1565c0",border:"1px solid #90caf9"}}>🌾 C:{r.carb}g</span>}
-                  {r.fat>0&&<span style={{padding:"3px 9px",borderRadius:20,fontSize:11,background:"#fce4ec",color:"#880e4f",border:"1px solid #f48fb1"}}>🫒 F:{r.fat}g</span>}
-                </div>
+              border:"2px solid rgba(150,215,185,0.7)",overflow:"hidden"}}>
+              {r.mediaKey&&(
+                <MediaViewer mediaKey={r.mediaKey} mediaType={r.mediaType}/>
               )}
-              {r.content&&<div style={{fontSize:13,color:"#3a6a4a",fontFamily:"'Noto Sans JP',sans-serif",
-                background:"#f0faf5",borderRadius:10,padding:"10px 12px",lineHeight:1.7}}>{r.content}</div>}
+              <div style={{padding:"12px 14px"}}>
+                <div style={{fontSize:11,color:"#8ab8a0",marginBottom:4,fontFamily:"'Noto Sans JP',sans-serif"}}>{r.date.replace(/-/g,"/")}</div>
+                {r.memo&&<div style={{fontSize:14,color:"#2a4a3a",fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.7}}>{r.memo}</div>}
+              </div>
             </div>
           ))}
-          {filtered.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>記録がありません</div>}
+          {foods.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>食事記録がありません</div>}
         </div>
       )}
     </div>
   );
 }
 
-function DataTab() {
-  const [body,setBody]=useState([]);
+// ─── 睡眠・習慣タブ ───────────────────────────────────────
+function SleepTab() {
+  const [records,setRecords]=useState([]);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [toast,setToast]=useState(null);
   const [showForm,setShowForm]=useState(false);
-  const [form,setForm]=useState({weight:"",fat:"",muscle:"",bmi:"",notes:""});
+  const [form,setForm]=useState({
+    bedtime:"23:00", waketime:"07:00",
+    napKept:true,
+    hotwater:false, nikkei:false, sunlight:false, outside:false,
+    mood:3, memo:""
+  });
 
   const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
+
+  const calcSleep=(bed,wake)=>{
+    try {
+      const [bh,bm]=bed.split(":").map(Number);
+      const [wh,wm]=wake.split(":").map(Number);
+      let mins=(wh*60+wm)-(bh*60+bm);
+      if(mins<0)mins+=24*60;
+      return (mins/60).toFixed(1);
+    } catch{return 0;}
+  };
+
+  const parseSleep=(page)=>{
+    const p=page.properties;
+    return {
+      id:page.id,
+      date:p["日付"]?.date?.start||"",
+      bedtime:p["就寝時刻"]?.rich_text?.[0]?.plain_text||"",
+      waketime:p["起床時刻"]?.rich_text?.[0]?.plain_text||"",
+      sleepHours:p["睡眠時間"]?.number||0,
+      napKept:p["仮眠キープ"]?.checkbox||false,
+      hotwater:p["白湯"]?.checkbox||false,
+      nikkei:p["日経"]?.checkbox||false,
+      sunlight:p["朝日"]?.checkbox||false,
+      outside:p["外気"]?.checkbox||false,
+      mood:p["気分"]?.number||3,
+      memo:p["メモ"]?.rich_text?.[0]?.plain_text||"",
+    };
+  };
+
   const load=useCallback(async()=>{
     setLoading(true);
     try {
-      const pages=await notionQuery(DB.body,[{property:"日付",direction:"descending"}]);
-      setBody(pages.map(parseBody));
+      const pages=await notionQuery(DB.sleep,[{property:"日付",direction:"descending"}]);
+      setRecords(pages.map(parseSleep));
     } catch(e){console.error(e);}
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
 
   const handleSave=async()=>{
-    if(!form.weight)return;
     setSaving(true);
     const today=new Date().toISOString().slice(0,10);
+    const sleepHours=Number(calcSleep(form.bedtime,form.waketime));
     try {
-      await notionCreate(DB.body,{
+      await notionCreate(DB.sleep,{
         "記録日":{title:[{text:{content:today}}]},
-        "体重(kg)":{number:Number(form.weight)},
-        "体脂肪率(%)":{number:Number(form.fat)||0},
-        "筋肉量(kg)":{number:Number(form.muscle)||0},
-        "BMI":{number:Number(form.bmi)||0},
-        "メモ":{rich_text:form.notes?[{text:{content:form.notes}}]:[]},
         "日付":{date:{start:today}},
+        "就寝時刻":{rich_text:[{text:{content:form.bedtime}}]},
+        "起床時刻":{rich_text:[{text:{content:form.waketime}}]},
+        "睡眠時間":{number:sleepHours},
+        "仮眠キープ":{checkbox:form.napKept},
+        "白湯":{checkbox:form.hotwater},
+        "日経":{checkbox:form.nikkei},
+        "朝日":{checkbox:form.sunlight},
+        "外気":{checkbox:form.outside},
+        "気分":{number:form.mood},
+        "メモ":{rich_text:form.memo?[{text:{content:form.memo}}]:[]},
       });
-      setForm({weight:"",fat:"",muscle:"",bmi:"",notes:""});
       setShowForm(false);
-      showToast("✅ Notionに保存しました！");
+      showToast("✅ 今日の記録を保存しました！");
       await load();
     } catch(e){showToast("⚠️ 保存に失敗しました",false);}
     setSaving(false);
   };
 
-  const latest=body[0],prev=body[1];
-  const diff=k=>latest&&prev?(Number(latest[k])-Number(prev[k])).toFixed(1):0;
-  const arrowC=(k,inv=false)=>{const d=diff(k);if(d==0)return"#888";const up=d>0;return(up&&!inv)||(!up&&inv)?"#cc4444":"#1a8a5a";};
-  const arrowS=(k,inv=false)=>{const d=diff(k);if(d==0)return"→";const up=d>0;return(up&&!inv)||(!up&&inv)?"▲":"▼";};
+  const moodEmojis=["😴","😪","😐","😊","🌟"];
+  const sleepHours=calcSleep(form.bedtime,form.waketime);
+
+  // 直近7日のグラフデータ
+  const last7=records.slice(0,7).reverse();
 
   return (
     <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
       {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
-      {loading?<LoadingSpinner msg="ボディデータを読み込み中..."/>:(
-        <>
-          {latest&&(
-            <div style={{background:"linear-gradient(135deg,rgba(195,238,215,0.97),rgba(170,225,200,0.97))",
-              borderRadius:20,border:"2px solid #7acca0",padding:"18px 16px",marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-                <span style={{fontSize:24}}>📊</span>
-                <div>
-                  <div style={{fontFamily:"'Nunito',sans-serif",fontWeight:900,fontSize:16,color:"#1a5a3a"}}>最新データ</div>
-                  <div style={{fontSize:12,color:"#3a8a5a",fontFamily:"'Noto Sans JP',sans-serif"}}>{latest.date.replace(/-/g,"/")} 測定</div>
-                </div>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                {[{l:"体重",k:"weight",u:"kg",inv:true},{l:"体脂肪率",k:"fat",u:"%",inv:true},
-                  {l:"筋肉量",k:"muscle",u:"kg",inv:false},{l:"BMI",k:"bmi",u:"",inv:true}].map(m=>(
-                  <div key={m.k} style={{background:"rgba(255,255,255,0.86)",borderRadius:14,padding:"14px 10px",textAlign:"center"}}>
-                    <div style={{fontSize:11,color:"#5a9a7a",fontFamily:"'Noto Sans JP',sans-serif",marginBottom:4}}>{m.l}</div>
-                    <div style={{fontSize:22,fontWeight:900,color:"#1a5a3a",fontFamily:"'Nunito',sans-serif"}}>{latest[m.k]}{m.u}</div>
-                    <div style={{fontSize:11,color:arrowC(m.k,m.inv),fontFamily:"'Nunito',sans-serif",fontWeight:700,marginTop:3}}>
-                      {arrowS(m.k,m.inv)} {Math.abs(diff(m.k))}{m.u}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div style={{fontWeight:900,fontSize:13,color:"#1a7a4a",marginBottom:10,fontFamily:"'Nunito',sans-serif"}}>📈 測定履歴</div>
-          <div style={{background:"rgba(255,255,255,0.88)",borderRadius:16,border:"2px solid rgba(150,215,185,0.7)",overflow:"hidden",marginBottom:16}}>
-            <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr",
-              padding:"10px 12px",background:"linear-gradient(135deg,#d8f0e4,#c0e8d0)",
-              fontSize:11,fontWeight:800,color:"#1a6a4a",fontFamily:"'Nunito',sans-serif"}}>
-              {["日付","体重","体脂肪%","筋肉量"].map(h=><div key={h} style={{textAlign:"center"}}>{h}</div>)}
-            </div>
-            {body.map((r,i)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr",
-                padding:"11px 12px",fontSize:13,color:"#1a4a3a",
-                background:i%2===0?"rgba(235,248,240,0.5)":"transparent",
-                borderTop:"1px solid rgba(150,205,175,0.3)",fontFamily:"'Noto Sans JP',sans-serif"}}>
-                <div style={{textAlign:"center",fontSize:11}}>{r.date.slice(5).replace("-","/")}</div>
-                <div style={{textAlign:"center",fontWeight:700}}>{r.weight}</div>
-                <div style={{textAlign:"center"}}>{r.fat}%</div>
-                <div style={{textAlign:"center"}}>{r.muscle}</div>
-              </div>
-            ))}
-            {body.length===0&&<div style={{textAlign:"center",padding:"30px",color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>データがありません</div>}
-          </div>
-        </>
-      )}
+
+      {/* 今日の記録ボタン */}
       <button onClick={()=>setShowForm(s=>!s)} style={{
-        width:"100%",padding:"14px",borderRadius:16,marginBottom:showForm?16:0,minHeight:52,
-        background:showForm?"rgba(200,240,220,0.6)":"linear-gradient(135deg,#4ac890,#1a7a4a)",
-        border:showForm?"2px dashed #4ac890":"none",
-        color:showForm?"#1a7a4a":"#fff",fontSize:16,fontWeight:900,
+        width:"100%",padding:"15px",borderRadius:16,marginBottom:16,minHeight:52,
+        background:showForm?"rgba(200,230,255,0.6)":"linear-gradient(135deg,#6ab8f0,#3a7abf)",
+        border:showForm?"2px dashed #6ab8f0":"none",
+        color:showForm?"#1a4a7a":"#fff",fontSize:16,fontWeight:900,
         cursor:"pointer",fontFamily:"'Nunito',sans-serif",touchAction:"manipulation"}}>
-        {showForm?"▲ 閉じる":"＋ 測定結果を入力"}
+        {showForm?"▲ 閉じる":"🌙 今日の睡眠・習慣を記録"}
       </button>
+
       {showForm&&(
-        <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-            {[{k:"weight",ph:"体重 (kg)"},{k:"fat",ph:"体脂肪率 (%)"},{k:"muscle",ph:"筋肉量 (kg)"},{k:"bmi",ph:"BMI"}].map(f=>(
-              <input key={f.k} type="number" placeholder={f.ph} value={form[f.k]}
-                onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))}
-                style={{padding:"13px",borderRadius:12,border:"1.5px solid #a0d8b8",
-                  background:"#f0faf5",color:"#1a4a3a",fontSize:16,outline:"none"}}/>
-            ))}
+        <div style={{background:"rgba(255,255,255,0.96)",borderRadius:20,border:"2px solid #a0c8e8",padding:"16px",marginBottom:16}}>
+          {/* 就寝・起床 */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",marginBottom:10}}>🛏 就寝・起床時刻</div>
+            <div style={{display:"flex",gap:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:"#5a8aaa",marginBottom:4,fontFamily:"'Noto Sans JP',sans-serif"}}>就寝</div>
+                <input type="time" value={form.bedtime} onChange={e=>setForm(f=>({...f,bedtime:e.target.value}))}
+                  style={{width:"100%",padding:"12px",borderRadius:12,border:"1.5px solid #a0c8e8",
+                    background:"#f0f6fc",color:"#1a3a5a",fontSize:16,outline:"none"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,color:"#5a8aaa",marginBottom:4,fontFamily:"'Noto Sans JP',sans-serif"}}>起床</div>
+                <input type="time" value={form.waketime} onChange={e=>setForm(f=>({...f,waketime:e.target.value}))}
+                  style={{width:"100%",padding:"12px",borderRadius:12,border:"1.5px solid #a0c8e8",
+                    background:"#f0f6fc",color:"#1a3a5a",fontSize:16,outline:"none"}}/>
+              </div>
+            </div>
+            <div style={{textAlign:"center",marginTop:8,fontSize:16,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif"}}>
+              😴 睡眠時間：{sleepHours}時間
+            </div>
           </div>
-          <textarea placeholder="メモ（体調など）" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}
+
+          {/* 仮眠キープ */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",marginBottom:8}}>⏰ 仮眠・二度寝</div>
+            <div style={{display:"flex",gap:8}}>
+              {[{v:true,l:"守れた ✅"},{v:false,l:"守れず ❌"}].map(opt=>(
+                <button key={String(opt.v)} onClick={()=>setForm(f=>({...f,napKept:opt.v}))} style={{
+                  flex:1,padding:"12px",borderRadius:12,cursor:"pointer",fontSize:14,
+                  background:form.napKept===opt.v?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#e8f8f0",
+                  color:form.napKept===opt.v?"#fff":"#1a7a4a",border:"none",
+                  fontFamily:"'Noto Sans JP',sans-serif",fontWeight:700}}>{opt.l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* 朝ルーティン */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",marginBottom:8}}>☀️ 朝ルーティン</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[{k:"hotwater",l:"白湯を飲んだ",icon:"☕"},{k:"nikkei",l:"日経を読んだ",icon:"📰"},
+                {k:"sunlight",l:"朝日を浴びた",icon:"🌅"},{k:"outside",l:"外に出た",icon:"🚶"}].map(item=>(
+                <button key={item.k} onClick={()=>setForm(f=>({...f,[item.k]:!f[item.k]}))} style={{
+                  padding:"12px 8px",borderRadius:12,cursor:"pointer",fontSize:12,
+                  background:form[item.k]?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#e8f8f0",
+                  color:form[item.k]?"#fff":"#1a7a4a",border:"none",
+                  fontFamily:"'Noto Sans JP',sans-serif",fontWeight:700,
+                  display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
+                  <span style={{fontSize:16}}>{item.icon}</span>{item.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 気分 */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",marginBottom:8}}>💫 今朝の調子</div>
+            <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+              {moodEmojis.map((em,i)=>(
+                <button key={i} onClick={()=>setForm(f=>({...f,mood:i+1}))} style={{
+                  width:52,height:52,borderRadius:14,fontSize:26,cursor:"pointer",
+                  background:form.mood===i+1?"linear-gradient(135deg,#ffe082,#ffb300)":"#f5f5f5",
+                  border:form.mood===i+1?"2px solid #ffb300":"1.5px solid #ddd"}}>
+                  {em}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* メモ */}
+          <textarea placeholder="メモ（気づいたことなど）" value={form.memo}
+            onChange={e=>setForm(f=>({...f,memo:e.target.value}))}
             style={{width:"100%",padding:"12px",borderRadius:12,marginBottom:12,
-              border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-              fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:60,resize:"vertical"}}/>
-          <button onClick={handleSave} disabled={saving} style={{width:"100%",padding:"14px",borderRadius:14,border:"none",
-            background:saving?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",color:"#fff",fontSize:16,
-            fontWeight:900,cursor:saving?"default":"pointer",fontFamily:"'Nunito',sans-serif"}}>
-            {saving?"保存中...":"Notionに保存 📊"}
+              border:"1.5px solid #a0c8e8",background:"#f0f6fc",color:"#1a3a5a",
+              fontSize:16,minHeight:70,resize:"vertical",outline:"none"}}/>
+
+          <button onClick={handleSave} disabled={saving} style={{
+            width:"100%",padding:"15px",borderRadius:14,border:"none",minHeight:52,
+            background:saving?"#c0d8f0":"linear-gradient(135deg,#6ab8f0,#3a7abf)",
+            color:"#fff",fontSize:16,fontWeight:900,cursor:"pointer",fontFamily:"'Nunito',sans-serif"}}>
+            {saving?"保存中...":"今日の記録を保存 🌙"}
           </button>
         </div>
       )}
-    </div>
-  );
-}
 
-function MessageTab({currentUser}) {
-  const [msgs,setMsgs]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [saving,setSaving]=useState(false);
-  const [toast,setToast]=useState(null);
-  const [form,setForm]=useState({title:"",content:"",category:"アドバイス"});
-  const CATS=["アドバイス","メニュー提案","励まし","雑談","報告"];
-
-  const showToast=(msg,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000);};
-  const load=useCallback(async()=>{
-    setLoading(true);
-    try {
-      const pages=await notionQuery(DB.message,[{property:"日付",direction:"descending"}]);
-      setMsgs(pages.map(parseMessage));
-    } catch(e){console.error(e);}
-    setLoading(false);
-  },[]);
-  useEffect(()=>{load();},[load]);
-
-  const handleSend=async()=>{
-    if(!form.content.trim())return;
-    setSaving(true);
-    try {
-      await notionCreate(DB.message,{
-        "タイトル":{title:[{text:{content:form.title||form.content.slice(0,20)}}]},
-        "内容":{rich_text:[{text:{content:form.content}}]},
-        "送信者":{select:{name:"Ayumi → Tatsuro"}},
-        "カテゴリ":{select:{name:form.category}},
-        "返信済み":{checkbox:false},
-        "日付":{date:{start:new Date().toISOString().slice(0,10)}},
-      });
-      setForm({title:"",content:"",category:"アドバイス"});
-      showToast("✅ 送信しました！");
-      await load();
-    } catch(e){showToast("⚠️ 送信に失敗しました",false);}
-    setSaving(false);
-  };
-
-  return (
-    <div style={{padding:"16px 16px 100px",position:"relative",zIndex:1}}>
-      {toast&&<Toast msg={toast.msg} ok={toast.ok}/>}
-      <div style={{background:"rgba(255,255,255,0.93)",borderRadius:20,border:"2px solid #a0d8b8",padding:"16px",marginBottom:16}}>
-        <div style={{fontSize:15,fontWeight:800,color:"#1a4a3a",fontFamily:"'Nunito',sans-serif",marginBottom:10}}>
-          💬 Taturoへメッセージ
-        </div>
-        <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-          {CATS.map(c=>(
-            <button key={c} onClick={()=>setForm(f=>({...f,category:c}))} style={{
-              padding:"6px 12px",borderRadius:20,cursor:"pointer",fontSize:12,
-              background:form.category===c?"linear-gradient(135deg,#4ac890,#1a7a4a)":"#e8f8f0",
-              color:form.category===c?"#fff":"#1a7a4a",border:"none",
-              fontFamily:"'Noto Sans JP',sans-serif"}}>
-              {c}
-            </button>
-          ))}
-        </div>
-        <textarea value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))}
-          placeholder="メッセージを入力..."
-          style={{width:"100%",padding:"13px",borderRadius:12,marginBottom:10,
-            border:"1.5px solid #a0d8b8",background:"#f0faf5",color:"#1a4a3a",
-            fontSize:16,fontFamily:"'Noto Sans JP',sans-serif",minHeight:80,resize:"vertical"}}/>
-        <button onClick={handleSend} disabled={saving||!form.content.trim()} style={{
-          width:"100%",padding:"14px",borderRadius:14,border:"none",
-          background:saving||!form.content.trim()?"#c0e0d0":"linear-gradient(135deg,#4ac890,#1a7a4a)",
-          color:"#fff",fontSize:15,fontWeight:900,cursor:"pointer",
-          fontFamily:"'Nunito',sans-serif"}}>
-          {saving?"送信中...":"送信 ✉️"}
-        </button>
-      </div>
-      {loading?<LoadingSpinner msg="メッセージを読み込み中..."/>:(
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {msgs.map(m=>{
-            const fromTrainer=m.sender?.includes("Tatsuro →");
-            return (
-              <div key={m.id} style={{
-                background:fromTrainer?"linear-gradient(135deg,#d8f0f8,#c8e8f4)":"rgba(210,245,228,0.95)",
-                border:`1.5px solid ${fromTrainer?"#7abccc":"#a0d8b8"}`,
-                borderRadius:16,padding:"14px",
-                alignSelf:fromTrainer?"flex-start":"flex-end",maxWidth:"90%"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
-                  <span style={{fontSize:12,fontWeight:800,
-                    color:fromTrainer?"#1a4a6a":"#1a6a4a",fontFamily:"'Nunito',sans-serif"}}>
-                    {fromTrainer?"🏋️ Taturo":"🌿 Ayumi"}
-                  </span>
-                  <span style={{fontSize:11,color:"#8ab8a0"}}>{m.date.replace(/-/g,"/")}</span>
-                  <span style={{padding:"2px 8px",borderRadius:20,fontSize:10,
-                    background:"rgba(255,255,255,0.6)",color:"#5a9a7a"}}>{m.category}</span>
+      {/* 直近7日グラフ */}
+      {!loading&&last7.length>0&&(
+        <div style={{background:"rgba(255,255,255,0.88)",borderRadius:20,
+          border:"2px solid rgba(100,180,230,0.5)",padding:"16px",marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif",marginBottom:12}}>
+            📊 直近の睡眠時間
+          </div>
+          <div style={{display:"flex",gap:4,alignItems:"flex-end",height:80}}>
+            {last7.map((r,i)=>{
+              const h=Number(r.sleepHours)||0;
+              const barH=Math.max(10,(h/10)*70);
+              const color=r.napKept?"#4ac890":h>=6?"#6ab8f0":"#ffb347";
+              return (
+                <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <div style={{fontSize:9,color:"#5a8aaa",fontFamily:"'Nunito',sans-serif",fontWeight:700}}>{h}h</div>
+                  <div style={{width:"100%",height:barH,borderRadius:"4px 4px 0 0",background:color,opacity:0.85}}/>
+                  <div style={{fontSize:9,color:"#8ab0c8",fontFamily:"'Nunito',sans-serif"}}>
+                    {r.date.slice(5).replace("-","/")}
+                  </div>
                 </div>
-                {m.title&&<div style={{fontSize:13,fontWeight:700,color:"#1a4a3a",marginBottom:4,fontFamily:"'Nunito',sans-serif"}}>{m.title}</div>}
-                <div style={{fontSize:14,color:"#2a4a3a",fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.6}}>{m.content}</div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:12,marginTop:8,justifyContent:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:"#4aaa7a",fontFamily:"'Noto Sans JP',sans-serif"}}>🟢 仮眠キープ</span>
+            <span style={{fontSize:11,color:"#5a9abf",fontFamily:"'Noto Sans JP',sans-serif"}}>🔵 6h以上</span>
+            <span style={{fontSize:11,color:"#cc8844",fontFamily:"'Noto Sans JP',sans-serif"}}>🟠 6h未満</span>
+          </div>
+        </div>
+      )}
+
+      {/* 記録一覧 */}
+      {loading?<LoadingSpinner msg="睡眠記録を読み込み中..."/>:(
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {records.map(r=>(
+            <div key={r.id} style={{background:"rgba(255,255,255,0.88)",borderRadius:18,
+              border:"2px solid rgba(100,180,230,0.4)",padding:"14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:800,color:"#1a4a7a",fontFamily:"'Nunito',sans-serif"}}>{r.date.replace(/-/g,"/")}</div>
+                <div style={{fontSize:11,color:r.napKept?"#1a8a5a":"#cc4444",fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif"}}>
+                  {r.napKept?"✅ キープ":"❌ 守れず"}
+                </div>
               </div>
-            );
-          })}
-          {msgs.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>メッセージがありません</div>}
+              <div style={{display:"flex",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,background:"#e8f4fc",color:"#1a5a8a",padding:"3px 10px",borderRadius:20,fontFamily:"'Noto Sans JP',sans-serif"}}>
+                  🛏 {r.bedtime}→{r.waketime}
+                </span>
+                <span style={{fontSize:12,background:"#e8f8f0",color:"#1a7a4a",padding:"3px 10px",borderRadius:20,fontFamily:"'Nunito',sans-serif",fontWeight:700}}>
+                  😴 {r.sleepHours}h
+                </span>
+                <span style={{fontSize:14}}>{moodEmojis[(r.mood||3)-1]}</span>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[{k:"hotwater",l:"白湯",icon:"☕"},{k:"nikkei",l:"日経",icon:"📰"},
+                  {k:"sunlight",l:"朝日",icon:"🌅"},{k:"outside",l:"外気",icon:"🚶"}].map(item=>(
+                  <span key={item.k} style={{fontSize:11,padding:"2px 8px",borderRadius:20,
+                    background:r[item.k]?"#e8f8f0":"#f5f5f5",
+                    color:r[item.k]?"#1a7a4a":"#aaa",
+                    border:`1px solid ${r[item.k]?"#a0d8b8":"#ddd"}`,
+                    fontFamily:"'Noto Sans JP',sans-serif"}}>
+                    {item.icon} {item.l}
+                  </span>
+                ))}
+              </div>
+              {r.memo&&<div style={{fontSize:12,color:"#5a7a9a",marginTop:6,fontFamily:"'Noto Sans JP',sans-serif"}}>{r.memo}</div>}
+            </div>
+          ))}
+          {records.length===0&&<div style={{textAlign:"center",padding:"40px",color:"#8ab8a0",fontFamily:"'Noto Sans JP',sans-serif"}}>睡眠記録がありません</div>}
         </div>
       )}
     </div>
@@ -970,10 +952,9 @@ function App() {
           ))}
         </div>
       </div>
-      {tab===0&&<TrainingTab currentUser={user}/>}
-      {tab===1&&<HealthTab currentUser={user}/>}
-      {tab===2&&<DataTab/>}
-      {tab===3&&<MessageTab currentUser={user}/>}
+      {tab===0&&<TrainingTab/>}
+      {tab===1&&<FoodTab/>}
+      {tab===2&&<SleepTab/>}
     </div>
   );
 }
