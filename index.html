@@ -81,7 +81,7 @@ function parseTraining(page) {
     emoji: BP_ICONS[p["部位"]?.select?.name] || "💪",
     addedBy: p["追加者"]?.select?.name || "Ayumi",
     mediaKey: p["メディアキー"]?.rich_text?.[0]?.plain_text || "",
-    mediaType: p["メディアタイプ"]?.select?.name || "",
+    mediaType: p["メディアタイプ"]?.rich_text?.[0]?.plain_text || "" || "",
   };
 }
 function parseHealth(page) {
@@ -398,7 +398,7 @@ function TrainingTab({currentUser}) {
     try {
       await notionUpdate(recordId,{
         "メディアキー":{rich_text:[{text:{content:key}}]},
-        "メディアタイプ":{select:{name:mediaType}},
+        "メディアタイプ":{rich_text:[{text:{content:mediaType}}]},
       });
       showToast("✅ 写真・動画を保存しました！");
       await load();
